@@ -3,15 +3,17 @@ use futures_core::task::{Context, Poll};
 use futures_core::Stream;
 use std::borrow::Cow;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::{fmt, mem};
+// use std::fmt;
+
+// ========================================================================== //
+// [General configuration]                                                    //
+// ========================================================================== //
 
 pub struct ProgressBarConfig {
     width: u32,
     desc: Cow<'static, str>,
-    theme: *const dyn ProgressBarTheme,
+    theme: &'static dyn ProgressBarTheme,
 }
-
-unsafe impl Sync for ProgressBarConfig {}
 
 static DEFAULT_CFG: ProgressBarConfig = ProgressBarConfig {
     width: 60,
@@ -19,41 +21,54 @@ static DEFAULT_CFG: ProgressBarConfig = ProgressBarConfig {
     theme: &DefaultProgressBarTheme,
 };
 
+// ========================================================================== //
+// [Customizable printing]                                                    //
+// ========================================================================== //
+
 pub trait ProgressBarTheme: Sync {
     fn render(&self, pb: &ProgressBar);
 }
 
 struct DefaultProgressBarTheme;
 
-fn bar(progress: f32, length: u32) {
-    let rescaled = (progress * length as f32 * 8.0) as usize;
+fn bar(progress: f32, length: u32) -> u32 {
+    let rescaled = (progress * length as f32 * 8.0) as u32;
     let (i, r) = (rescaled / 8, rescaled % 8);
 
     for _ in 0..i {
         print!("█");
     }
 
-    let chr = '▏' as u32 - r as u32;
+    let chr = '▏' as u32 - r;
     let chr = unsafe { std::char::from_u32_unchecked(chr) };
     print!("{}", chr);
+
+    i + 1
 }
 
 impl ProgressBarTheme for DefaultProgressBarTheme {
     fn render(&self, pb: &ProgressBar) {
         let progress = pb.progress();
-        let cfg = unsafe { &*pb.cfg };
         print!("{:>6.2}% ", progress * 100.0);
-        bar(progress, cfg.width);
+        let bar_len = bar(progress, pb.cfg.width);
+        for _ in 0..(pb.cfg.width as i64 - bar_len as i64).max(0) {
+            print!(" ");
+        }
         print!(" {}/{}\r", pb.value(), pb.target.unwrap());
     }
 }
 
+// ========================================================================== //
+// [Main progress bar struct]                                                 //
+// ========================================================================== //
+
 pub struct ProgressBar {
-    cfg: *const ProgressBarConfig,
+    cfg: &'static ProgressBarConfig,
     value: AtomicUsize,
     target: Option<usize>,
 }
 
+/// Constructors.
 impl ProgressBar {
     pub fn new(target: Option<usize>) -> Self {
         Self {
@@ -70,7 +85,17 @@ impl ProgressBar {
     pub fn with_target(target: usize) -> Self {
         Self::new(Some(target))
     }
+}
 
+/// Builder-style methods.
+impl ProgressBar {
+    pub fn config(self, cfg: &'static ProgressBarConfig) -> Self {
+        Self { cfg, ..self }
+    }
+}
+
+/// Accessors.
+impl ProgressBar {
     pub fn add(&self, n: usize) -> usize {
         self.value.fetch_add(n, Ordering::Relaxed)
     }
@@ -107,7 +132,7 @@ impl<I: Iterator> Iterator for ProgressBarIter<I> {
     fn next(&mut self) -> Option<Self::Item> {
         self.inner.next().map(|x| {
             self.bar.inc();
-            unsafe { (*(*self.bar.cfg).theme).render(&self.bar) };
+            self.bar.cfg.theme.render(&self.bar);
             x
         })
     }
@@ -146,7 +171,7 @@ impl<S: Stream + Unpin> Stream for ProgressBarStream<S> {
         match inner.poll_next(cx) {
             x @ Poll::Ready(Some(_)) => {
                 this.bar.inc();
-                unsafe { (*(*this.bar.cfg).theme).render(&this.bar) };
+                this.bar.cfg.theme.render(&this.bar);
                 x
             }
             x => x,
