@@ -217,15 +217,29 @@ impl ProgressBar {
 /// Value manipulation and access.
 impl ProgressBar {
     #[inline]
-    pub fn set(&self, n: usize) {
+    pub fn sync_set(&self, n: usize) {
         self.update_ctr.fetch_add(1, ATOMIC_ORD);
         self.value.store(n, ATOMIC_ORD);
     }
 
     #[inline]
-    pub fn add(&self, n: usize) -> usize {
+    pub fn set(&mut self, n: usize) {
+        *self.update_ctr.get_mut() += 1;
+        *self.value.get_mut() = n;
+    }
+
+    #[inline]
+    pub fn sync_add(&self, n: usize) -> usize {
         self.value.fetch_add(n, ATOMIC_ORD);
         self.update_ctr.fetch_add(1, ATOMIC_ORD)
+    }
+
+    #[inline]
+    pub fn add(&mut self, n: usize) -> usize {
+        *self.value.get_mut() += n;
+        let prev = *self.update_ctr.get_mut();
+        *self.update_ctr.get_mut() += 1;
+        prev
     }
 
     #[inline]
@@ -269,10 +283,25 @@ impl ProgressBar {
 
         (elapsed_sec % timer_sec) / timer_sec
     }
+
+    #[inline]
+    pub fn sync_tick(&self) {
+        if self.sync_add(1) == self.next_print() {
+            self.heavy_tick();
+        }
+    }
+
+    #[inline]
+    pub fn tick(&mut self) {
+        if self.add(1) == self.next_print() {
+            self.heavy_tick();
+        }
+    }
 }
 
 /// Internals.
 impl ProgressBar {
+    #[inline]
     fn next_print(&self) -> usize {
         self.next_print.load(ATOMIC_ORD)
     }
@@ -310,13 +339,6 @@ impl ProgressBar {
         self.cfg.theme.render(self);
         self.update_next_print();
     }
-
-    #[inline]
-    fn tick(&self) {
-        if self.add(1) == self.next_print() {
-            self.heavy_tick();
-        }
-    }
 }
 
 // ========================================================================== //
@@ -332,10 +354,9 @@ impl<I: Iterator> Iterator for ProgressBarIter<I> {
     type Item = I::Item;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.inner.next().map(|x| {
-            self.bar.tick();
-            x
-        })
+        let next = self.inner.next()?;
+        self.bar.tick();
+        Some(next)
     }
 }
 
