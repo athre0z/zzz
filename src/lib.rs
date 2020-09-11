@@ -82,24 +82,44 @@ fn human_time(duration: Duration) -> String {
     format!("{:02}:{:02}:{:02}", h, m, s)
 }
 
+fn human_amount(x: f32) -> String {
+    let (n, unit) = if x > 1e9 {
+        (x / 1e9, "bil")
+    } else if x > 1e6 {
+        (x / 1e6, "mil")
+    } else if x > 1e3 {
+        (x / 1e3, "k")
+    } else {
+        (x, "")
+    };
+
+    format!("{:.02}{}", n, unit)
+}
+
 impl ProgressBarTheme for DefaultProgressBarTheme {
     fn render(&self, pb: &ProgressBar) {
-        let progress = pb.progress().unwrap();
-
         print!("\r");
 
-        if let Some(desc) = pb.cfg.desc.as_deref() {
-            print!("{}: ", desc);
+        if let Some(progress) = pb.progress() {
+            if let Some(desc) = pb.cfg.desc.as_deref() {
+                print!("{}: ", desc);
+            }
+
+            print!("{:>6.2}% ", progress * 100.0);
+            let bar_len = bar(progress, pb.cfg.width);
+
+            for _ in 0..(pb.cfg.width as i64 - bar_len as i64).max(0) {
+                print!(" ");
+            }
         }
 
-        print!("{:>6.2}% ", progress * 100.0);
-        let bar_len = bar(progress, pb.cfg.width);
-
-        for _ in 0..(pb.cfg.width as i64 - bar_len as i64).max(0) {
-            print!(" ");
-        }
-
-        print!(" {}/{}", pb.value(), pb.target.unwrap());
+        print!(
+            " {}/{}",
+            pb.value(),
+            pb.target
+                .map(|x| x.to_string())
+                .unwrap_or_else(|| "?".to_owned())
+        );
 
         if let Some(eta) = pb.eta() {
             print!(" ETA: {}", human_time(eta));
@@ -107,7 +127,14 @@ impl ProgressBarTheme for DefaultProgressBarTheme {
             print!(" {}", human_time(pb.elapsed()));
         }
 
-        std::io::stdout().flush();
+        let iters_per_sec = pb.iters_per_sec();
+        if iters_per_sec >= 1.0 {
+            print!(" ({} iter/sec)", human_amount(iters_per_sec));
+        } else {
+            print!(" ({:.0} sec/iter)", 1.0 / iters_per_sec);
+        }
+
+        std::io::stdout().flush().unwrap();
     }
 }
 
@@ -130,6 +157,12 @@ pub struct ProgressBar {
     update_ctr: AtomicUsize,
     /// Next print at `update_ctr == next_print`.
     next_print: AtomicUsize,
+}
+
+impl Drop for ProgressBar {
+    fn drop(&mut self) {
+        println!();
+    }
 }
 
 /// Constructors.
@@ -157,8 +190,9 @@ impl ProgressBar {
 
 /// Builder-style methods.
 impl ProgressBar {
-    pub fn config(self, cfg: &'static ProgressBarConfig) -> Self {
-        Self { cfg, ..self }
+    pub fn config(mut self, cfg: &'static ProgressBarConfig) -> Self {
+        self.cfg = cfg;
+        self
     }
 }
 
@@ -200,6 +234,11 @@ impl ProgressBar {
         let left = 1. / self.progress()?;
         Some(self.elapsed().mul_f32(left))
     }
+
+    pub fn iters_per_sec(&self) -> f32 {
+        let elapsed_sec = self.elapsed().as_secs_f32();
+        self.value() as f32 / elapsed_sec
+    }
 }
 
 /// Internals.
@@ -216,9 +255,7 @@ impl ProgressBar {
             return;
         }
 
-        let elapsed_sec = self.elapsed().as_secs_f32();
-        let iters_per_sec = self.value() as f32 / elapsed_sec;
-        let freq = (iters_per_sec / self.cfg.updates_per_sec) as usize;
+        let freq = (self.iters_per_sec() / self.cfg.updates_per_sec) as usize;
         let freq = freq.max(1);
 
         self.next_print.fetch_add(freq as usize, ATOMIC_ORD);
@@ -244,6 +281,7 @@ impl ProgressBar {
         self.update_next_print();
     }
 
+    #[inline]
     fn tick(&self) {
         if self.inc() == self.next_print() {
             self.heavy_tick();
@@ -271,6 +309,12 @@ impl<I: Iterator> Iterator for ProgressBarIter<I> {
     }
 }
 
+impl<I: Iterator> ProgressBarIter<I> {
+    pub fn into_inner(self) -> I {
+        self.inner
+    }
+}
+
 pub trait ProgressBarIterExt: Iterator + Sized {
     fn pb(self) -> ProgressBarIter<Self> {
         let mut bar = ProgressBar::spinner();
@@ -292,6 +336,12 @@ impl<I: Iterator + Sized> ProgressBarIterExt for I {}
 pub struct ProgressBarStream<S: Stream + Unpin> {
     bar: ProgressBar,
     inner: S,
+}
+
+impl<S: Stream + Unpin> ProgressBarStream<S> {
+    pub fn into_inner(self) -> S {
+        self.inner
+    }
 }
 
 impl<S: Stream + Unpin> Stream for ProgressBarStream<S> {
