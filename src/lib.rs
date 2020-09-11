@@ -1,5 +1,3 @@
-#![feature(rustc_attrs)]
-
 use futures_core::core_reexport::pin::Pin;
 use futures_core::task::{Context, Poll};
 use futures_core::Stream;
@@ -44,7 +42,7 @@ static DEFAULT_CFG: ProgressBarConfig = ProgressBarConfig {
     width: 60,
     desc: None,
     theme: &DefaultProgressBarTheme,
-    updates_per_sec: 30.0,
+    updates_per_sec: 60.0,
 };
 
 // ========================================================================== //
@@ -91,12 +89,33 @@ fn human_amount(x: f32) -> String {
 }
 
 fn spinner(x: f32, width: u32) -> String {
-    const SPINNER_WIDTH: i64 = 1;
+    fn easing_quad(mut x: f32) -> f32 {
+        x *= 2.0;
 
-    let x = ((-x + 0.5).abs() - 0.5) * -2.0;
-    let x = (width as f32 * x) as i64;
-    let lpad = (x - SPINNER_WIDTH).max(0) as usize;
-    let rpad = (width as i64 - x).max(0) as usize;
+        if x > 1.0 {
+            -0.5 * ((x - 1.0) * (x - 3.0) - 1.0)
+        } else {
+            0.5 * x * x
+        }
+    }
+
+    // fn easing_cubic(mut x: f32) -> f32 {
+    //     x *= 2.0;
+    //
+    //     if x < 1.0 {
+    //         0.5 * x.powi(3)
+    //     } else {
+    //         x -= 2.;
+    //         0.5 * (x.powi(3) + 2.)
+    //     }
+    // }
+
+    let x = ((-x + 0.5).abs() - 0.5) * -2.;
+    let x = easing_quad(x).max(0.).min(1.);
+    let x = (width as f32 * x).round() as i64;
+
+    let lpad = x as usize;
+    let rpad = (width as i64 - x) as usize;
 
     format!("|{}◯{}|", " ".repeat(lpad), " ".repeat(rpad))
 }
