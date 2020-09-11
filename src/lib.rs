@@ -8,7 +8,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 // use std::fmt;
 
-/// Requirements:
+/// Requirements
+/// ------------
 /// - Seamless integration with iterators and streams
 /// - Unless explicitly set, try to infer size from iter/stream
 /// - Automatically throttle printing to a sane amount
@@ -43,7 +44,7 @@ static DEFAULT_CFG: ProgressBarConfig = ProgressBarConfig {
     width: 60,
     desc: None,
     theme: &DefaultProgressBarTheme,
-    updates_per_sec: 10.0,
+    updates_per_sec: 30.0,
 };
 
 // ========================================================================== //
@@ -90,14 +91,14 @@ fn human_amount(x: f32) -> String {
 }
 
 fn spinner(x: f32, width: u32) -> String {
-    const SPINNER_WIDTH: u32 = 3;
+    const SPINNER_WIDTH: i64 = 1;
 
     let x = ((-x + 0.5).abs() - 0.5) * -2.0;
-    let x = (width as f32 * x) as u32;
+    let x = (width as f32 * x) as i64;
     let lpad = (x - SPINNER_WIDTH).max(0) as usize;
-    let rpad = (width - x) as usize;
+    let rpad = (width as i64 - x).max(0) as usize;
 
-    format!("|{}<=>{}|", " ".repeat(lpad), " ".repeat(rpad))
+    format!("|{}◯{}|", " ".repeat(lpad), " ".repeat(rpad))
 }
 
 impl ProgressBarTheme for DefaultProgressBarTheme {
@@ -122,11 +123,11 @@ impl ProgressBarTheme for DefaultProgressBarTheme {
         }
         // And a spinner for unknown-length bars.
         else {
-            let duration = Duration::from_secs(3);
+            let duration = Duration::from_secs(2);
             let pos = pb.timer_progress(duration);
 
             // Make the spinner turn around in the end.
-            println!("{}", spinner(pos, pb.cfg.width));
+            print!("{}", spinner(pos, pb.cfg.width));
         }
 
         // Print "done/total" part
@@ -369,7 +370,7 @@ impl<I: Iterator> ProgressBarIter<I> {
 pub trait ProgressBarIterExt: Iterator + Sized {
     fn pb(self) -> ProgressBarIter<Self> {
         let mut bar = ProgressBar::spinner();
-        bar.process_size_hint(self.size_hint());
+        // bar.process_size_hint(self.size_hint());
         ProgressBarIter { bar, inner: self }
     }
 
