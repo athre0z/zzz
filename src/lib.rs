@@ -43,7 +43,7 @@ static DEFAULT_CFG: ProgressBarConfig = ProgressBarConfig {
     width: 60,
     desc: None,
     theme: &DefaultProgressBarTheme,
-    updates_per_sec: 5.0,
+    updates_per_sec: 10.0,
 };
 
 // ========================================================================== //
@@ -60,33 +60,26 @@ struct DefaultProgressBarTheme;
 fn bar(progress: f32, length: u32) -> u32 {
     let rescaled = (progress * length as f32 * 8.0) as u32;
     let (i, r) = (rescaled / 8, rescaled % 8);
-
-    for _ in 0..i {
-        print!("█");
-    }
-
+    print!("{}", "█".repeat(i as usize));
     let chr = '▏' as u32 - r;
     let chr = unsafe { std::char::from_u32_unchecked(chr) };
     print!("{}", chr);
-
     i + 1
 }
 
 fn human_time(duration: Duration) -> String {
     let total = duration.as_secs();
-
     let h = total / 3600;
     let m = total % 3600 / 60;
     let s = total % 60;
-
     format!("{:02}:{:02}:{:02}", h, m, s)
 }
 
 fn human_amount(x: f32) -> String {
     let (n, unit) = if x > 1e9 {
-        (x / 1e9, "bil")
+        (x / 1e9, "b")
     } else if x > 1e6 {
-        (x / 1e6, "mil")
+        (x / 1e6, "m")
     } else if x > 1e3 {
         (x / 1e3, "k")
     } else {
@@ -96,23 +89,47 @@ fn human_amount(x: f32) -> String {
     format!("{:.02}{}", n, unit)
 }
 
+fn spinner(x: f32, width: u32) -> String {
+    const SPINNER_WIDTH: u32 = 3;
+
+    let x = ((-x + 0.5).abs() - 0.5) * -2.0;
+    let x = (width as f32 * x) as u32;
+    let lpad = (x - SPINNER_WIDTH).max(0) as usize;
+    let rpad = (width - x) as usize;
+
+    format!("|{}<=>{}|", " ".repeat(lpad), " ".repeat(rpad))
+}
+
 impl ProgressBarTheme for DefaultProgressBarTheme {
     fn render(&self, pb: &ProgressBar) {
         print!("\r");
 
+        // If a description is set, print it now.
+        if let Some(desc) = pb.cfg.desc.as_deref() {
+            print!("{}: ", desc);
+        }
+
+        // Draw a progress bar for known-length bars.
         if let Some(progress) = pb.progress() {
-            if let Some(desc) = pb.cfg.desc.as_deref() {
-                print!("{}: ", desc);
-            }
+            print!("{:>6.2}% |", progress * 100.0);
 
-            print!("{:>6.2}% ", progress * 100.0);
             let bar_len = bar(progress, pb.cfg.width);
-
             for _ in 0..(pb.cfg.width as i64 - bar_len as i64).max(0) {
                 print!(" ");
             }
+
+            print!("|");
+        }
+        // And a spinner for unknown-length bars.
+        else {
+            let duration = Duration::from_secs(3);
+            let pos = pb.timer_progress(duration);
+
+            // Make the spinner turn around in the end.
+            println!("{}", spinner(pos, pb.cfg.width));
         }
 
+        // Print "done/total" part
         print!(
             " {}/{}",
             pb.value(),
@@ -122,16 +139,17 @@ impl ProgressBarTheme for DefaultProgressBarTheme {
         );
 
         if let Some(eta) = pb.eta() {
-            print!(" ETA: {}", human_time(eta));
+            print!(" [{}]", human_time(eta));
         } else {
             print!(" {}", human_time(pb.elapsed()));
         }
 
+        // Print iteration rate.
         let iters_per_sec = pb.iters_per_sec();
         if iters_per_sec >= 1.0 {
-            print!(" ({} iter/sec)", human_amount(iters_per_sec));
+            print!(" ({} it/s)", human_amount(iters_per_sec));
         } else {
-            print!(" ({:.0} sec/iter)", 1.0 / iters_per_sec);
+            print!(" ({:.0} s/it)", 1.0 / iters_per_sec);
         }
 
         std::io::stdout().flush().unwrap();
@@ -170,7 +188,7 @@ impl ProgressBar {
     pub fn new(target: Option<usize>) -> Self {
         Self {
             cfg: &DEFAULT_CFG,
-            value: 0.into(),
+            value: 1.into(),
             update_ctr: 0.into(),
             target,
             next_print: 1.into(),
@@ -198,28 +216,29 @@ impl ProgressBar {
 
 /// Value manipulation and access.
 impl ProgressBar {
+    #[inline]
     pub fn set(&self, n: usize) {
         self.update_ctr.fetch_add(1, ATOMIC_ORD);
         self.value.store(n, ATOMIC_ORD);
     }
 
+    #[inline]
     pub fn add(&self, n: usize) -> usize {
         self.value.fetch_add(n, ATOMIC_ORD);
         self.update_ctr.fetch_add(1, ATOMIC_ORD)
     }
 
-    pub fn inc(&self) -> usize {
-        self.add(1)
-    }
-
+    #[inline]
     pub fn update_ctr(&self) -> usize {
         self.update_ctr.load(ATOMIC_ORD)
     }
 
+    #[inline]
     pub fn value(&self) -> usize {
         self.value.load(ATOMIC_ORD)
     }
 
+    #[inline]
     pub fn progress(&self) -> Option<f32> {
         let target = self.target?;
         Some(self.value() as f32 / target as f32)
@@ -238,6 +257,17 @@ impl ProgressBar {
     pub fn iters_per_sec(&self) -> f32 {
         let elapsed_sec = self.elapsed().as_secs_f32();
         self.value() as f32 / elapsed_sec
+    }
+
+    /// Calculates the progress of a rolling timer.
+    ///
+    /// Returned values are always between 0 and 1. Timers are calculated
+    /// from the start of the progress bar.
+    pub fn timer_progress(&self, timer: Duration) -> f32 {
+        let elapsed_sec = self.elapsed().as_secs_f32();
+        let timer_sec = timer.as_secs_f32();
+
+        (elapsed_sec % timer_sec) / timer_sec
     }
 }
 
@@ -283,7 +313,7 @@ impl ProgressBar {
 
     #[inline]
     fn tick(&self) {
-        if self.inc() == self.next_print() {
+        if self.add(1) == self.next_print() {
             self.heavy_tick();
         }
     }
