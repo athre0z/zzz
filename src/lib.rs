@@ -152,9 +152,9 @@ impl ProgressBarTheme for DefaultProgressBarTheme {
         // Print "done/total" part
         print!(
             " {}/{}",
-            pb.value(),
+            human_amount(pb.value() as f32),
             pb.target
-                .map(|x| x.to_string())
+                .map(|x| human_amount(x as f32))
                 .unwrap_or_else(|| "?".to_owned())
         );
 
@@ -389,7 +389,7 @@ impl<I: Iterator> ProgressBarIter<I> {
 pub trait ProgressBarIterExt: Iterator + Sized {
     fn pb(self) -> ProgressBarIter<Self> {
         let mut bar = ProgressBar::spinner();
-        // bar.process_size_hint(self.size_hint());
+        bar.process_size_hint(self.size_hint());
         ProgressBarIter { bar, inner: self }
     }
 
