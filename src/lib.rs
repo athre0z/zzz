@@ -1,7 +1,8 @@
 use futures_core::core_reexport::pin::Pin;
 use futures_core::task::{Context, Poll};
 use futures_core::Stream;
-use std::io::Write;
+use std::fmt::Write as _;
+use std::io::{stdout, Write as _};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 // use std::fmt;
@@ -32,14 +33,17 @@ const ATOMIC_ORD: Ordering = Ordering::Relaxed;
 // ========================================================================== //
 
 pub struct ProgressBarConfig {
-    width: u32,
+    width: Option<u32>,
+    /// Minimum width to bother with drawing the bar for.
+    min_bar_width: u32,
     desc: Option<String>,
     theme: &'static dyn ProgressBarTheme,
     updates_per_sec: f32,
 }
 
 static DEFAULT_CFG: ProgressBarConfig = ProgressBarConfig {
-    width: 60,
+    width: None,
+    min_bar_width: 5,
     desc: None,
     theme: &DefaultProgressBarTheme,
     updates_per_sec: 60.0,
@@ -56,14 +60,24 @@ pub trait ProgressBarTheme: Sync {
 #[derive(Debug, Default)]
 struct DefaultProgressBarTheme;
 
-fn bar(progress: f32, length: u32) -> u32 {
-    let rescaled = (progress * length as f32 * 8.0) as u32;
+/// Prints a progress bar.
+fn bar(progress: f32, length: u32) -> String {
+    if length == 0 {
+        return String::new();
+    }
+
+    let inner_len = length.saturating_sub(2);
+    let rescaled = (progress * (inner_len - 1) as f32 * 8.0).round() as u32;
     let (i, r) = (rescaled / 8, rescaled % 8);
-    print!("{}", "█".repeat(i as usize));
-    let chr = '▏' as u32 - r;
-    let chr = unsafe { std::char::from_u32_unchecked(chr) };
-    print!("{}", chr);
-    i + 1
+    let main = "█".repeat(i as usize);
+    let tail = '▏' as u32 - r;
+    let tail = unsafe { std::char::from_u32_unchecked(tail) };
+    let pad_len = inner_len - i - 1 /* tail */;
+    let pad = " ".repeat(pad_len as usize);
+
+    let bar = format!("|{}{}{}|", main, tail, pad);
+    debug_assert_eq!(bar.chars().count() as u32, length);
+    bar
 }
 
 fn human_time(duration: Duration) -> String {
@@ -76,11 +90,11 @@ fn human_time(duration: Duration) -> String {
 
 fn human_amount(x: f32) -> String {
     let (n, unit) = if x > 1e9 {
-        (x / 1e9, "b")
+        (x / 1e9, "B")
     } else if x > 1e6 {
-        (x / 1e6, "m")
+        (x / 1e6, "M")
     } else if x > 1e3 {
-        (x / 1e3, "k")
+        (x / 1e3, "K")
     } else {
         (x, "")
     };
@@ -89,6 +103,9 @@ fn human_amount(x: f32) -> String {
 }
 
 fn spinner(x: f32, width: u32) -> String {
+    // Subtract two pipes + spinner char
+    let inner_width = width.saturating_sub(3);
+
     fn easing_quad(mut x: f32) -> f32 {
         x *= 2.0;
 
@@ -110,69 +127,104 @@ fn spinner(x: f32, width: u32) -> String {
     //     }
     // }
 
+    // Make the spinner turn around in the end.
     let x = ((-x + 0.5).abs() - 0.5) * -2.;
+    // Apply easing function.
     let x = easing_quad(x).max(0.).min(1.);
-    let x = (width as f32 * x).round() as i64;
+    // Transform 0..1 scale to int width.
+    let x = ((inner_width as f32) * x).round() as u32;
 
     let lpad = x as usize;
-    let rpad = (width as i64 - x) as usize;
+    let rpad = inner_width.saturating_sub(x) as usize;
 
-    format!("|{}◯{}|", " ".repeat(lpad), " ".repeat(rpad))
+    let spinner = format!("|{}◯{}|", " ".repeat(lpad), " ".repeat(rpad));
+    debug_assert_eq!(spinner.chars().count() as u32, width);
+    spinner
 }
 
 impl ProgressBarTheme for DefaultProgressBarTheme {
     fn render(&self, pb: &ProgressBar) {
-        print!("\r");
+        let mut o = stdout();
 
-        // If a description is set, print it now.
-        if let Some(desc) = pb.cfg.desc.as_deref() {
-            print!("{}: ", desc);
-        }
+        write!(o, "\r").unwrap();
 
-        // Draw a progress bar for known-length bars.
-        if let Some(progress) = pb.progress() {
-            print!("{:>6.2}% |", progress * 100.0);
+        // Draw left side.
+        let left = {
+            let mut buf = String::new();
 
-            let bar_len = bar(progress, pb.cfg.width);
-            for _ in 0..(pb.cfg.width as i64 - bar_len as i64).max(0) {
-                print!(" ");
+            // If a description is set, print it.
+            if let Some(desc) = pb.cfg.desc.as_deref() {
+                write!(buf, "{}: ", desc).unwrap();
             }
 
-            print!("|");
+            if let Some(progress) = pb.progress() {
+                write!(buf, "{:>6.2}% ", progress * 100.0).unwrap();
+            }
+
+            buf
+        };
+
+        // Draw right side.
+        let right = {
+            let mut buf = String::new();
+
+            // Print "done/total" part
+            write!(
+                buf,
+                " {}/{}",
+                human_amount(pb.value() as f32),
+                pb.target
+                    .map(|x| human_amount(x as f32))
+                    .unwrap_or_else(|| "?".to_owned())
+            )
+            .unwrap();
+
+            // Print ETA / time elapsed.
+            if let Some(eta) = pb.eta() {
+                write!(buf, " [{}]", human_time(eta)).unwrap();
+            } else {
+                write!(buf, " [{}]", human_time(pb.elapsed())).unwrap();
+            }
+
+            // Print iteration rate.
+            let iters_per_sec = pb.iters_per_sec();
+            if iters_per_sec >= 1.0 {
+                write!(buf, " ({} it/s)", human_amount(iters_per_sec)).unwrap();
+            } else {
+                write!(buf, " ({:.0} s/it)", 1.0 / iters_per_sec).unwrap();
+            }
+
+            buf
+        };
+
+        let max_width = pb
+            .cfg
+            .width
+            .or_else(|| term_size::dimensions().map(|x| x.0 as u32))
+            .unwrap_or(80);
+
+        let bar_width = max_width
+            .saturating_sub(left.len() as u32)
+            .saturating_sub(right.len() as u32);
+
+        write!(o, "{}", left).unwrap();
+
+        if bar_width > pb.cfg.min_bar_width {
+            // Draw a progress bar for known-length bars.
+            if let Some(progress) = pb.progress() {
+                write!(o, "{}", bar(progress, bar_width)).unwrap();
+            }
+            // And a spinner for unknown-length bars.
+            else {
+                let duration = Duration::from_secs(2);
+                let pos = pb.timer_progress(duration);
+                write!(o, "{}", spinner(pos, bar_width)).unwrap();
+            }
         }
-        // And a spinner for unknown-length bars.
-        else {
-            let duration = Duration::from_secs(2);
-            let pos = pb.timer_progress(duration);
 
-            // Make the spinner turn around in the end.
-            print!("{}", spinner(pos, pb.cfg.width));
-        }
+        write!(o, "{}", right).unwrap();
 
-        // Print "done/total" part
-        print!(
-            " {}/{}",
-            human_amount(pb.value() as f32),
-            pb.target
-                .map(|x| human_amount(x as f32))
-                .unwrap_or_else(|| "?".to_owned())
-        );
-
-        if let Some(eta) = pb.eta() {
-            print!(" [{}]", human_time(eta));
-        } else {
-            print!(" {}", human_time(pb.elapsed()));
-        }
-
-        // Print iteration rate.
-        let iters_per_sec = pb.iters_per_sec();
-        if iters_per_sec >= 1.0 {
-            print!(" ({} it/s)", human_amount(iters_per_sec));
-        } else {
-            print!(" ({:.0} s/it)", 1.0 / iters_per_sec);
-        }
-
-        std::io::stdout().flush().unwrap();
+        o.flush().unwrap();
     }
 }
 
@@ -389,7 +441,7 @@ impl<I: Iterator> ProgressBarIter<I> {
 pub trait ProgressBarIterExt: Iterator + Sized {
     fn pb(self) -> ProgressBarIter<Self> {
         let mut bar = ProgressBar::spinner();
-        bar.process_size_hint(self.size_hint());
+        // bar.process_size_hint(self.size_hint());
         ProgressBarIter { bar, inner: self }
     }
 
