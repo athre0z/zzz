@@ -1,6 +1,7 @@
 use std::fmt::Write as _;
 use std::io::{stdout, Write as _};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::RwLock;
 use std::time::{Duration, Instant};
 
 use futures_core::core_reexport::pin::Pin;
@@ -36,17 +37,15 @@ pub struct ProgressBarConfig {
     width: Option<u32>,
     /// Minimum width to bother with drawing the bar for.
     min_bar_width: u32,
-    desc: Option<String>,
     theme: &'static dyn ProgressBarTheme,
-    updates_per_sec: f32,
+    max_fps: f32,
 }
 
 static DEFAULT_CFG: ProgressBarConfig = ProgressBarConfig {
     width: None,
     min_bar_width: 5,
-    desc: None,
     theme: &DefaultProgressBarTheme,
-    updates_per_sec: 60.0,
+    max_fps: 60.0,
 };
 
 // ========================================================================== //
@@ -175,8 +174,8 @@ impl ProgressBarTheme for DefaultProgressBarTheme {
             let mut buf = String::new();
 
             // If a description is set, print it.
-            if let Some(desc) = pb.cfg.desc.as_deref() {
-                write!(buf, "{}: ", desc).unwrap();
+            if let Some(desc) = pb.desc() {
+                write!(buf, "{} ", desc).unwrap();
             }
 
             if let Some(progress) = pb.progress() {
@@ -269,6 +268,8 @@ pub struct ProgressBar {
     update_ctr: AtomicUsize,
     /// Next print at `update_ctr == next_print`.
     next_print: AtomicUsize,
+    /// Description of the progress bar, e.g. "Downloading image".
+    desc: RwLock<Option<String>>,
 }
 
 impl Drop for ProgressBar {
@@ -279,24 +280,29 @@ impl Drop for ProgressBar {
 
 /// Constructors.
 impl ProgressBar {
-    pub fn new(target: Option<usize>) -> Self {
+    fn new(target: Option<usize>, explicit_target: bool) -> Self {
         Self {
             cfg: &DEFAULT_CFG,
-            value: 1.into(),
+            value: 0.into(),
             update_ctr: 0.into(),
             target,
             next_print: 1.into(),
-            explicit_target: target.is_some(),
+            explicit_target,
             start: Instant::now(),
+            desc: RwLock::new(None),
         }
     }
 
+    pub fn smart() -> Self {
+        Self::new(None, false)
+    }
+
     pub fn spinner() -> Self {
-        Self::new(None)
+        Self::new(None, true)
     }
 
     pub fn with_target(target: usize) -> Self {
-        Self::new(Some(target))
+        Self::new(Some(target), true)
     }
 }
 
@@ -352,6 +358,17 @@ impl ProgressBar {
     #[inline]
     pub fn value(&self) -> usize {
         self.value.load(ATOMIC_ORD)
+    }
+
+    /// Get current task description text.
+    pub fn desc(&self) -> Option<String> {
+        self.desc.read().unwrap().clone()
+    }
+
+    /// Set current task description text.
+    pub fn sync_set_desc(&self, text: Option<impl Into<String>>) {
+        let mut desc_lock = self.desc.write().unwrap();
+        *desc_lock = text.map(|x| x.into());
     }
 
     #[inline]
@@ -416,7 +433,7 @@ impl ProgressBar {
             return;
         }
 
-        let freq = (self.iters_per_sec() / self.cfg.updates_per_sec) as usize;
+        let freq = (self.iters_per_sec() / self.cfg.max_fps) as usize;
         let freq = freq.max(1);
 
         self.next_print.fetch_add(freq as usize, ATOMIC_ORD);
@@ -475,7 +492,8 @@ pub trait ProgressBarIterExt: Iterator + Sized {
         ProgressBarIter { bar, inner: self }
     }
 
-    fn with_pb(self, bar: ProgressBar) -> ProgressBarIter<Self> {
+    fn with_pb(self, mut bar: ProgressBar) -> ProgressBarIter<Self> {
+        bar.process_size_hint(self.size_hint());
         ProgressBarIter { bar, inner: self }
     }
 }
@@ -517,6 +535,11 @@ impl<S: Stream + Unpin> Stream for ProgressBarStream<S> {
 pub trait ProgressBarStreamExt: Stream + Unpin + Sized {
     fn pb(self) -> ProgressBarStream<Self> {
         let mut bar = ProgressBar::spinner();
+        bar.process_size_hint(self.size_hint());
+        ProgressBarStream { bar, inner: self }
+    }
+
+    fn with_pb(self, mut bar: ProgressBar) -> ProgressBarStream<Self> {
         bar.process_size_hint(self.size_hint());
         ProgressBarStream { bar, inner: self }
     }
