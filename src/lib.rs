@@ -1,12 +1,10 @@
-use std::fmt::Write as _;
-use std::io::{stdout, Write as _};
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::RwLock;
-use std::time::{Duration, Instant};
-
-use futures_core::core_reexport::pin::Pin;
-use futures_core::task::{Context, Poll};
-use futures_core::Stream;
+use std::{
+    fmt::Write as _,
+    io::{stdout, Write as _},
+    sync::atomic::{AtomicUsize, Ordering},
+    sync::RwLock,
+    time::{Duration, Instant},
+};
 
 /// Requirements
 /// ------------
@@ -325,7 +323,7 @@ impl ProgressBar {
 /// Value manipulation and access.
 impl ProgressBar {
     #[inline]
-    pub fn sync_set(&self, n: usize) {
+    pub fn set_sync(&self, n: usize) {
         self.update_ctr.fetch_add(1, ATOMIC_ORD);
         self.value.store(n, ATOMIC_ORD);
     }
@@ -337,7 +335,7 @@ impl ProgressBar {
     }
 
     #[inline]
-    pub fn sync_add(&self, n: usize) -> usize {
+    pub fn add_sync(&self, n: usize) -> usize {
         self.value.fetch_add(n, ATOMIC_ORD);
         self.update_ctr.fetch_add(1, ATOMIC_ORD)
     }
@@ -366,9 +364,14 @@ impl ProgressBar {
     }
 
     /// Set current task description text.
-    pub fn sync_set_desc(&self, text: Option<impl Into<String>>) {
+    pub fn set_desc(&mut self, text: Option<impl Into<String>>) {
+        *self.desc.get_mut().unwrap() = text.map(Into::into);
+    }
+
+    /// Set current task description text, in a thread safe manner.
+    pub fn set_desc_sync(&self, text: Option<impl Into<String>>) {
         let mut desc_lock = self.desc.write().unwrap();
-        *desc_lock = text.map(|x| x.into());
+        *desc_lock = text.map(Into::into);
     }
 
     #[inline]
@@ -404,8 +407,8 @@ impl ProgressBar {
     }
 
     #[inline]
-    pub fn sync_tick(&self) {
-        if self.sync_add(1) == self.next_print() {
+    pub fn tick_sync(&self) {
+        if self.add_sync(1) == self.next_print() {
             self.heavy_tick();
         }
     }
@@ -487,7 +490,7 @@ impl<I: Iterator> ProgressBarIter<I> {
 
 pub trait ProgressBarIterExt: Iterator + Sized {
     fn pb(self) -> ProgressBarIter<Self> {
-        let mut bar = ProgressBar::spinner();
+        let mut bar = ProgressBar::smart();
         bar.process_size_hint(self.size_hint());
         ProgressBarIter { bar, inner: self }
     }
@@ -501,48 +504,78 @@ pub trait ProgressBarIterExt: Iterator + Sized {
 impl<I: Iterator + Sized> ProgressBarIterExt for I {}
 
 // ========================================================================== //
+// [ParIter integration]                                                      //
+// ========================================================================== //
+
+// #[cfg(feature = "rayon")]
+// pub mod par_iter {
+//     use rayon::iter::ParallelIterator;
+//
+//     pub struct ProgressBarParIter<I: Par> {
+//         bar: ProgressBar,
+//         inner: I,
+//     }
+// }
+//
+// #[cfg(feature = "rayon")]
+// pub use par_iter::*;
+
+// ========================================================================== //
 // [Stream integration]                                                       //
 // ========================================================================== //
 
-pub struct ProgressBarStream<S: Stream + Unpin> {
-    bar: ProgressBar,
-    inner: S,
-}
+#[cfg(feature = "streams")]
+pub mod streams {
+    use super::*;
+    use futures_core::{
+        core_reexport::pin::Pin,
+        task::{Context, Poll},
+        Stream,
+    };
 
-impl<S: Stream + Unpin> ProgressBarStream<S> {
-    pub fn into_inner(self) -> S {
-        self.inner
+    pub struct ProgressBarStream<S: Stream + Unpin> {
+        bar: ProgressBar,
+        inner: S,
     }
-}
 
-impl<S: Stream + Unpin> Stream for ProgressBarStream<S> {
-    type Item = S::Item;
-
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let this = Pin::into_inner(self);
-        let inner = Pin::new(&mut this.inner);
-
-        match inner.poll_next(cx) {
-            x @ Poll::Ready(Some(_)) => {
-                this.bar.tick();
-                x
-            }
-            x => x,
+    impl<S: Stream + Unpin> ProgressBarStream<S> {
+        pub fn into_inner(self) -> S {
+            self.inner
         }
     }
-}
 
-pub trait ProgressBarStreamExt: Stream + Unpin + Sized {
-    fn pb(self) -> ProgressBarStream<Self> {
-        let mut bar = ProgressBar::spinner();
-        bar.process_size_hint(self.size_hint());
-        ProgressBarStream { bar, inner: self }
+    impl<S: Stream + Unpin> Stream for ProgressBarStream<S> {
+        type Item = S::Item;
+
+        fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+            let this = Pin::into_inner(self);
+            let inner = Pin::new(&mut this.inner);
+
+            match inner.poll_next(cx) {
+                x @ Poll::Ready(Some(_)) => {
+                    this.bar.tick();
+                    x
+                }
+                x => x,
+            }
+        }
     }
 
-    fn with_pb(self, mut bar: ProgressBar) -> ProgressBarStream<Self> {
-        bar.process_size_hint(self.size_hint());
-        ProgressBarStream { bar, inner: self }
+    pub trait ProgressBarStreamExt: Stream + Unpin + Sized {
+        fn pb(self) -> ProgressBarStream<Self> {
+            let mut bar = ProgressBar::smart();
+            bar.process_size_hint(self.size_hint());
+            ProgressBarStream { bar, inner: self }
+        }
+
+        fn with_pb(self, mut bar: ProgressBar) -> ProgressBarStream<Self> {
+            bar.process_size_hint(self.size_hint());
+            ProgressBarStream { bar, inner: self }
+        }
     }
+
+    impl<S: Stream + Unpin + Sized> ProgressBarStreamExt for S {}
 }
 
-impl<S: Stream + Unpin + Sized> ProgressBarStreamExt for S {}
+#[cfg(feature = "streams")]
+pub use streams::*;

@@ -6,9 +6,15 @@ edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+default = ["par-iter", "streams"]
+par-iter = ["rayon"]
+streams = ["futures-core"]
+
 [dependencies]
 term_size = "0.3"
-futures-core = "0.3"
+futures-core = { version = "0.3", optional = true }
+rayon = { version = "1.4", optional = true }
 
 [dev-dependencies]
 tokio = { version = "0.2", features = ["full"] }
