@@ -1,11 +1,11 @@
-use futures_core::core_reexport::pin::Pin;
-use futures_core::task::{Context, Poll};
-use futures_core::Stream;
 use std::fmt::Write as _;
 use std::io::{stdout, Write as _};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
-// use std::fmt;
+
+use futures_core::core_reexport::pin::Pin;
+use futures_core::task::{Context, Poll};
+use futures_core::Stream;
 
 /// Requirements
 /// ------------
@@ -60,7 +60,7 @@ pub trait ProgressBarTheme: Sync {
 #[derive(Debug, Default)]
 struct DefaultProgressBarTheme;
 
-/// Prints a progress bar.
+/// Creates a unicode progress bar.
 fn bar(progress: f32, length: u32) -> String {
     if length == 0 {
         return String::new();
@@ -104,43 +104,65 @@ fn human_amount(x: f32) -> String {
 
 fn spinner(x: f32, width: u32) -> String {
     // Subtract two pipes + spinner char
-    let inner_width = width.saturating_sub(3);
+    let inner_width = width.saturating_sub(4);
 
-    fn easing_quad(mut x: f32) -> f32 {
-        x *= 2.0;
-
-        if x > 1.0 {
-            -0.5 * ((x - 1.0) * (x - 3.0) - 1.0)
-        } else {
-            0.5 * x * x
-        }
-    }
-
-    // fn easing_cubic(mut x: f32) -> f32 {
+    // fn easing_inout_quad(mut x: f32) -> f32 {
     //     x *= 2.0;
     //
-    //     if x < 1.0 {
-    //         0.5 * x.powi(3)
+    //     if x > 1.0 {
+    //         -0.5 * ((x - 1.0) * (x - 3.0) - 1.0)
     //     } else {
-    //         x -= 2.;
-    //         0.5 * (x.powi(3) + 2.)
+    //         0.5 * x * x
     //     }
     // }
 
-    // Make the spinner turn around in the end.
+    fn easing_inout_cubic(mut x: f32) -> f32 {
+        x *= 2.0;
+
+        if x < 1.0 {
+            0.5 * x.powi(3)
+        } else {
+            x -= 2.;
+            0.5 * (x.powi(3) + 2.)
+        }
+    }
+
+    // fn easing_out_quad(x: f32) -> f32 {
+    //     -x * (x - 2.)
+    // }
+
+    // Make the spinner turn around after half the period.
     let x = ((-x + 0.5).abs() - 0.5) * -2.;
+
     // Apply easing function.
-    let x = easing_quad(x).max(0.).min(1.);
+    let x = easing_inout_cubic(x).max(0.).min(1.);
     // Transform 0..1 scale to int width.
     let x = ((inner_width as f32) * x).round() as u32;
 
     let lpad = x as usize;
     let rpad = inner_width.saturating_sub(x) as usize;
 
-    let spinner = format!("|{}◯{}|", " ".repeat(lpad), " ".repeat(rpad));
+    let ball_offs = x / 8 % 8; // slow anim down
+    let ball = unsafe { std::char::from_u32_unchecked('🌑' as u32 + ball_offs) };
+
+    let spinner = format!("[{}{}{}]", " ".repeat(lpad), ball, " ".repeat(rpad));
     debug_assert_eq!(spinner.chars().count() as u32, width);
     spinner
 }
+
+/*
+barr1 = UInt32[0x00, 0x40, 0x04, 0x02, 0x01]
+barr2 = UInt32[0x00, 0x80, 0x20, 0x10, 0x08]
+function braille(a::Float64, b::Float64)
+    bchar(a::UInt32) = '⠀' + a
+    idx(x) = min(x * 4 + 1, 5) |> round |> UInt32
+
+    x = barr1[1:idx(a)] |> sum
+    x |= barr2[1:idx(b)] |> sum
+
+    x |> UInt32 |> bchar
+end
+*/
 
 impl ProgressBarTheme for DefaultProgressBarTheme {
     fn render(&self, pb: &ProgressBar) {
@@ -216,7 +238,7 @@ impl ProgressBarTheme for DefaultProgressBarTheme {
             }
             // And a spinner for unknown-length bars.
             else {
-                let duration = Duration::from_secs(2);
+                let duration = Duration::from_secs(3);
                 let pos = pb.timer_progress(duration);
                 write!(o, "{}", spinner(pos, bar_width)).unwrap();
             }
@@ -280,8 +302,16 @@ impl ProgressBar {
 
 /// Builder-style methods.
 impl ProgressBar {
+    /// Replace the config of the progress bar.
     pub fn config(mut self, cfg: &'static ProgressBarConfig) -> Self {
         self.cfg = cfg;
+        self
+    }
+
+    /// Force display as a spinner even if size hints are present.
+    pub fn force_spinner(mut self) -> Self {
+        self.explicit_target = true;
+        self.target = None;
         self
     }
 }
@@ -441,7 +471,7 @@ impl<I: Iterator> ProgressBarIter<I> {
 pub trait ProgressBarIterExt: Iterator + Sized {
     fn pb(self) -> ProgressBarIter<Self> {
         let mut bar = ProgressBar::spinner();
-        // bar.process_size_hint(self.size_hint());
+        bar.process_size_hint(self.size_hint());
         ProgressBarIter { bar, inner: self }
     }
 
