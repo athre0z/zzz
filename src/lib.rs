@@ -172,7 +172,7 @@ impl ProgressBarTheme for DefaultProgressBarTheme {
             let mut buf = String::new();
 
             // If a description is set, print it.
-            if let Some(desc) = pb.desc() {
+            if let Some(desc) = pb.message() {
                 write!(buf, "{} ", desc).unwrap();
             }
 
@@ -267,7 +267,7 @@ pub struct ProgressBar {
     /// Next print at `update_ctr == next_print`.
     next_print: AtomicUsize,
     /// Description of the progress bar, e.g. "Downloading image".
-    desc: RwLock<Option<String>>,
+    message: RwLock<Option<String>>,
 }
 
 impl Drop for ProgressBar {
@@ -287,7 +287,7 @@ impl ProgressBar {
             next_print: 1.into(),
             explicit_target,
             start: Instant::now(),
-            desc: RwLock::new(None),
+            message: RwLock::new(None),
         }
     }
 
@@ -322,24 +322,25 @@ impl ProgressBar {
 
 /// Value manipulation and access.
 impl ProgressBar {
-    #[inline]
-    pub fn set_sync(&self, n: usize) {
-        self.update_ctr.fetch_add(1, ATOMIC_ORD);
-        self.value.store(n, ATOMIC_ORD);
-    }
-
+    /// Set the progress bar value to a new, absolute value.
+    ///
+    /// See `set_sync` for a thread-safe version.
     #[inline]
     pub fn set(&mut self, n: usize) {
         *self.update_ctr.get_mut() += 1;
         *self.value.get_mut() = n;
     }
 
+    /// Synchronized version fo `set`.
     #[inline]
-    pub fn add_sync(&self, n: usize) -> usize {
-        self.value.fetch_add(n, ATOMIC_ORD);
-        self.update_ctr.fetch_add(1, ATOMIC_ORD)
+    pub fn set_sync(&self, n: usize) {
+        self.update_ctr.fetch_add(1, ATOMIC_ORD);
+        self.value.store(n, ATOMIC_ORD);
     }
 
+    /// Add `n` to the value of the progress bar.
+    ///
+    /// See `add_sync` for a thread-safe version.
     #[inline]
     pub fn add(&mut self, n: usize) -> usize {
         *self.value.get_mut() += n;
@@ -348,48 +349,61 @@ impl ProgressBar {
         prev
     }
 
+    /// Synchronized version fo `add`.
+    #[inline]
+    pub fn add_sync(&self, n: usize) -> usize {
+        self.value.fetch_add(n, ATOMIC_ORD);
+        self.update_ctr.fetch_add(1, ATOMIC_ORD)
+    }
+
+    /// How often has the value been changed since creation?
     #[inline]
     pub fn update_ctr(&self) -> usize {
         self.update_ctr.load(ATOMIC_ORD)
     }
 
+    /// Get the current value of the progress bar.
     #[inline]
     pub fn value(&self) -> usize {
         self.value.load(ATOMIC_ORD)
     }
 
-    /// Get current task description text.
-    pub fn desc(&self) -> Option<String> {
-        self.desc.read().unwrap().clone()
+    /// Get the current task description text.
+    pub fn message(&self) -> Option<String> {
+        self.message.read().unwrap().clone()
     }
 
-    /// Set current task description text.
-    pub fn set_desc(&mut self, text: Option<impl Into<String>>) {
-        *self.desc.get_mut().unwrap() = text.map(Into::into);
+    /// Set the current task description text.
+    pub fn set_message(&mut self, text: Option<impl Into<String>>) {
+        *self.message.get_mut().unwrap() = text.map(Into::into);
     }
 
-    /// Set current task description text, in a thread safe manner.
-    pub fn set_desc_sync(&self, text: Option<impl Into<String>>) {
-        let mut desc_lock = self.desc.write().unwrap();
-        *desc_lock = text.map(Into::into);
+    /// Synchronized version fo `set_message`.
+    pub fn set_message_sync(&self, text: Option<impl Into<String>>) {
+        let mut message_lock = self.message.write().unwrap();
+        *message_lock = text.map(Into::into);
     }
 
+    /// Calculate the current progress, `0.0 .. 1.0`.
     #[inline]
     pub fn progress(&self) -> Option<f32> {
         let target = self.target?;
         Some(self.value() as f32 / target as f32)
     }
 
+    /// Calculate the elapsed time since creation of the progress bar.
     pub fn elapsed(&self) -> Duration {
         self.start.elapsed()
     }
 
+    /// Estimate the duration until completion.
     pub fn eta(&self) -> Option<Duration> {
         // wen eta?!
         let left = 1. / self.progress()?;
         Some(self.elapsed().mul_f32(left))
     }
 
+    /// Calculate the mean iterations per second since creation of the progress bar.
     pub fn iters_per_sec(&self) -> f32 {
         let elapsed_sec = self.elapsed().as_secs_f32();
         self.value() as f32 / elapsed_sec
@@ -428,7 +442,7 @@ impl ProgressBar {
         self.next_print.load(ATOMIC_ORD)
     }
 
-    /// Calculate next print.
+    /// Calculate next print
     fn update_next_print(&self) {
         // Give the loop some time to warm up.
         if self.update_ctr() < 10 {
@@ -444,6 +458,7 @@ impl ProgressBar {
 
     #[rustfmt::skip]
     fn process_size_hint(&mut self, hint: (usize, Option<usize>)) {
+        // If an explicit target is set, disregard size hints.
         if self.explicit_target {
             return;
         }
