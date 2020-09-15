@@ -47,6 +47,32 @@ static DEFAULT_CFG: ProgressBarConfig = ProgressBarConfig {
 };
 
 // ========================================================================== //
+// [Utils]                                                                    //
+// ========================================================================== //
+
+/// Pads and aligns a value to the length of a cache line.
+///
+/// Adapted from crossbeam:
+/// https://docs.rs/crossbeam/0.7.3/crossbeam/utils/struct.CachePadded.html
+#[cfg_attr(target_arch = "x86_64", repr(align(128)))]
+#[cfg_attr(not(target_arch = "x86_64"), repr(align(64)))]
+pub struct CachePadded<T>(T);
+
+impl<T> std::ops::Deref for CachePadded<T> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        &self.0
+    }
+}
+
+impl<T> std::ops::DerefMut for CachePadded<T> {
+    fn deref_mut(&mut self) -> &mut T {
+        &mut self.0
+    }
+}
+
+// ========================================================================== //
 // [Customizable printing]                                                    //
 // ========================================================================== //
 
@@ -260,14 +286,14 @@ pub struct ProgressBar {
     explicit_target: bool,
     /// Creation time of the progress bar.
     start: Instant,
-    /// Progress value displayed to the user.
-    value: AtomicUsize,
-    /// Number of progress bar updates so far.
-    update_ctr: AtomicUsize,
-    /// Next print at `update_ctr == next_print`.
-    next_print: AtomicUsize,
     /// Description of the progress bar, e.g. "Downloading image".
     message: RwLock<Option<String>>,
+    /// Progress value displayed to the user.
+    value: CachePadded<AtomicUsize>,
+    /// Number of progress bar updates so far.
+    update_ctr: CachePadded<AtomicUsize>,
+    /// Next print at `update_ctr == next_print`.
+    next_print: CachePadded<AtomicUsize>,
 }
 
 impl Drop for ProgressBar {
@@ -281,10 +307,10 @@ impl ProgressBar {
     fn new(target: Option<usize>, explicit_target: bool) -> Self {
         Self {
             cfg: &DEFAULT_CFG,
-            value: 0.into(),
-            update_ctr: 0.into(),
+            value: CachePadded(0.into()),
+            update_ctr: CachePadded(0.into()),
             target,
-            next_print: 1.into(),
+            next_print: CachePadded(1.into()),
             explicit_target,
             start: Instant::now(),
             message: RwLock::new(None),
