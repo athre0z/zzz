@@ -127,7 +127,7 @@ fn human_amount(x: f32) -> String {
 
 fn spinner(x: f32, width: u32) -> String {
     // Subtract two pipes + spinner char
-    let inner_width = width.saturating_sub(4);
+    let inner_width = width.saturating_sub(3);
 
     // fn easing_inout_quad(mut x: f32) -> f32 {
     //     x *= 2.0;
@@ -263,7 +263,8 @@ impl ProgressBarTheme for DefaultProgressBarTheme {
             else {
                 let duration = Duration::from_secs(3);
                 let pos = pb.timer_progress(duration);
-                write!(o, "{}", spinner(pos, bar_width)).unwrap();
+                // Sub 1 from width because many terms render emojis with double width.
+                write!(o, "{}", spinner(pos, bar_width - 1)).unwrap();
             }
         }
 
@@ -307,12 +308,12 @@ impl ProgressBar {
     fn new(target: Option<usize>, explicit_target: bool) -> Self {
         Self {
             cfg: &DEFAULT_CFG,
-            value: CachePadded(0.into()),
-            update_ctr: CachePadded(0.into()),
             target,
-            next_print: CachePadded(1.into()),
             explicit_target,
             start: Instant::now(),
+            value: CachePadded(0.into()),
+            update_ctr: CachePadded(0.into()),
+            next_print: CachePadded(1.into()),
             message: RwLock::new(None),
         }
     }
