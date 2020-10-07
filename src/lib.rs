@@ -347,6 +347,21 @@ impl ProgressBar {
 
 /// Value manipulation and access.
 impl ProgressBar {
+    #[rustfmt::skip]
+    pub fn process_size_hint(&mut self, hint: (usize, Option<usize>)) {
+        // If an explicit target is set, disregard size hints.
+        if self.explicit_target {
+            return;
+        }
+
+        // Prefer hi over lo, treat lo = 0 as unknown.
+        self.target = match hint {
+            (_ , Some(hi)) => Some(hi),
+            (0 , None    ) => None,
+            (lo, None    ) => Some(lo),
+        };
+    }
+
     /// Set the progress bar value to a new, absolute value.
     ///
     /// See `set_sync` for a thread-safe version.
@@ -453,9 +468,12 @@ impl ProgressBar {
     }
 
     #[inline]
-    pub fn tick(&mut self) {
+    pub fn tick(&mut self) -> bool {
         if self.add(1) == self.next_print() {
             self.heavy_tick();
+            true
+        } else {
+            false
         }
     }
 }
@@ -479,21 +497,6 @@ impl ProgressBar {
         let freq = freq.max(1);
 
         self.next_print.fetch_add(freq as usize, ATOMIC_ORD);
-    }
-
-    #[rustfmt::skip]
-    fn process_size_hint(&mut self, hint: (usize, Option<usize>)) {
-        // If an explicit target is set, disregard size hints.
-        if self.explicit_target {
-            return;
-        }
-
-        // Prefer hi over lo, treat lo = 0 as unknown.
-        self.target = match hint {
-            (_ , Some(hi)) => Some(hi),
-            (0 , None    ) => None,
-            (lo, None    ) => Some(lo),
-        };
     }
 
     #[cold]
