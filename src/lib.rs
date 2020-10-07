@@ -191,8 +191,6 @@ impl ProgressBarTheme for DefaultProgressBarTheme {
     fn render(&self, pb: &ProgressBar) {
         let mut o = stdout();
 
-        write!(o, "\r").unwrap();
-
         // Draw left side.
         let left = {
             let mut buf = String::new();
@@ -268,7 +266,7 @@ impl ProgressBarTheme for DefaultProgressBarTheme {
             }
         }
 
-        write!(o, "{}", right).unwrap();
+        write!(o, "{}\r", right).unwrap();
 
         o.flush().unwrap();
     }
