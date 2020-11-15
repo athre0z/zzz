@@ -570,8 +570,8 @@ impl<I: Iterator + Sized> ProgressBarIterExt for I {}
 #[cfg(feature = "streams")]
 pub mod streams {
     use super::*;
+    use core::pin::Pin;
     use futures_core::{
-        core_reexport::pin::Pin,
         task::{Context, Poll},
         Stream,
     };
