@@ -364,6 +364,8 @@ impl ProgressBar {
 
     /// Set the progress bar value to a new, absolute value.
     ///
+    /// This doesn't automatically redraw the progress-bar.
+    ///
     /// See `set_sync` for a thread-safe version.
     #[inline]
     pub fn set(&mut self, n: usize) {
@@ -386,6 +388,7 @@ impl ProgressBar {
         *self.value.get_mut() += n;
         let prev = *self.update_ctr.get_mut();
         *self.update_ctr.get_mut() += 1;
+        self.maybe_redraw(prev);
         prev
     }
 
@@ -393,7 +396,9 @@ impl ProgressBar {
     #[inline]
     pub fn add_sync(&self, n: usize) -> usize {
         self.value.fetch_add(n, ATOMIC_ORD);
-        self.update_ctr.fetch_add(1, ATOMIC_ORD)
+        let prev = self.update_ctr.fetch_add(1, ATOMIC_ORD);
+        self.maybe_redraw(prev);
+        prev
     }
 
     /// How often has the value been changed since creation?
@@ -460,21 +465,10 @@ impl ProgressBar {
         (elapsed_sec % timer_sec) / timer_sec
     }
 
-    #[inline]
-    pub fn tick_sync(&self) {
-        if self.add_sync(1) == self.next_print() {
-            self.heavy_tick();
-        }
-    }
-
-    #[inline]
-    pub fn tick(&mut self) -> bool {
-        if self.add(1) == self.next_print() {
-            self.heavy_tick();
-            true
-        } else {
-            false
-        }
+    /// Forces a redraw of the progress-bar.
+    pub fn redraw(&self) {
+        self.cfg.theme.render(self);
+        self.update_next_print();
     }
 }
 
@@ -499,10 +493,16 @@ impl ProgressBar {
         self.next_print.fetch_add(freq as usize, ATOMIC_ORD);
     }
 
-    #[cold]
-    fn heavy_tick(&self) {
-        self.cfg.theme.render(self);
-        self.update_next_print();
+    #[inline]
+    fn maybe_redraw(&self, prev: usize) {
+        #[cold]
+        fn cold_redraw(this: &ProgressBar) {
+            this.redraw();
+        }
+
+        if prev == self.next_print() {
+            cold_redraw(self);
+        }
     }
 }
 
@@ -520,7 +520,7 @@ impl<I: Iterator> Iterator for ProgressBarIter<I> {
 
     fn next(&mut self) -> Option<Self::Item> {
         let next = self.inner.next()?;
-        self.bar.tick();
+        self.bar.add(1);
         Some(next)
     }
 }
@@ -596,7 +596,7 @@ pub mod streams {
 
             match inner.poll_next(cx) {
                 x @ Poll::Ready(Some(_)) => {
-                    this.bar.tick();
+                    this.bar.add(1);
                     x
                 }
                 x => x,
