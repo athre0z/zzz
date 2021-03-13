@@ -559,16 +559,20 @@ pub mod streams {
         Stream,
     };
 
-    impl<Inner: Stream + Unpin> Stream for ProgressBarIter<Inner> {
+    impl<Inner: Stream> Stream for ProgressBarIter<Inner> {
         type Item = Inner::Item;
 
         fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-            let this = Pin::into_inner(self);
-            let inner = Pin::new(&mut this.inner);
+            // SAFETY: This is no different than what pin_project would do, except without
+            //         requiring the dependency on the lib.
+            let (inner, bar) = unsafe {
+                let this = self.get_unchecked_mut();
+                (Pin::new_unchecked(&mut this.inner), &mut this.bar)
+            };
 
             match inner.poll_next(cx) {
                 x @ Poll::Ready(Some(_)) => {
-                    this.bar.add(1);
+                    bar.add(1);
                     x
                 }
                 x => x,
@@ -576,7 +580,7 @@ pub mod streams {
         }
     }
 
-    pub trait ProgressBarStreamExt: Stream + Unpin + Sized {
+    pub trait ProgressBarStreamExt: Stream + Sized {
         fn pb(self) -> ProgressBarIter<Self> {
             let mut bar = ProgressBar::smart();
             bar.process_size_hint(self.size_hint());
@@ -589,7 +593,7 @@ pub mod streams {
         }
     }
 
-    impl<Inner: Stream + Unpin + Sized> ProgressBarStreamExt for Inner {}
+    impl<Inner: Stream + Sized> ProgressBarStreamExt for Inner {}
 }
 
 #[cfg(feature = "streams")]
