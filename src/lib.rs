@@ -547,23 +547,6 @@ pub trait ProgressBarIterExt: Iterator + Sized {
 impl<I: Iterator + Sized> ProgressBarIterExt for I {}
 
 // ========================================================================== //
-// [ParIter integration]                                                      //
-// ========================================================================== //
-
-// #[cfg(feature = "rayon")]
-// pub mod par_iter {
-//     use rayon::iter::ParallelIterator;
-//
-//     pub struct ProgressBarParIter<I: Par> {
-//         bar: ProgressBar,
-//         inner: I,
-//     }
-// }
-//
-// #[cfg(feature = "rayon")]
-// pub use par_iter::*;
-
-// ========================================================================== //
 // [Stream integration]                                                       //
 // ========================================================================== //
 
