@@ -510,24 +510,24 @@ impl ProgressBar {
 // [Iterator integration]                                                     //
 // ========================================================================== //
 
-pub struct ProgressBarIter<I: Iterator> {
+pub struct ProgressBarIter<Inner> {
     bar: ProgressBar,
-    inner: I,
+    inner: Inner,
 }
 
-impl<I: Iterator> Iterator for ProgressBarIter<I> {
-    type Item = I::Item;
+impl<Inner> ProgressBarIter<Inner> {
+    pub fn into_inner(self) -> Inner {
+        self.inner
+    }
+}
+
+impl<Inner: Iterator> Iterator for ProgressBarIter<Inner> {
+    type Item = Inner::Item;
 
     fn next(&mut self) -> Option<Self::Item> {
         let next = self.inner.next()?;
         self.bar.add(1);
         Some(next)
-    }
-}
-
-impl<I: Iterator> ProgressBarIter<I> {
-    pub fn into_inner(self) -> I {
-        self.inner
     }
 }
 
@@ -544,7 +544,7 @@ pub trait ProgressBarIterExt: Iterator + Sized {
     }
 }
 
-impl<I: Iterator + Sized> ProgressBarIterExt for I {}
+impl<Inner: Iterator + Sized> ProgressBarIterExt for Inner {}
 
 // ========================================================================== //
 // [Stream integration]                                                       //
@@ -559,19 +559,8 @@ pub mod streams {
         Stream,
     };
 
-    pub struct ProgressBarStream<S: Stream + Unpin> {
-        bar: ProgressBar,
-        inner: S,
-    }
-
-    impl<S: Stream + Unpin> ProgressBarStream<S> {
-        pub fn into_inner(self) -> S {
-            self.inner
-        }
-    }
-
-    impl<S: Stream + Unpin> Stream for ProgressBarStream<S> {
-        type Item = S::Item;
+    impl<Inner: Stream + Unpin> Stream for ProgressBarIter<Inner> {
+        type Item = Inner::Item;
 
         fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
             let this = Pin::into_inner(self);
@@ -588,19 +577,19 @@ pub mod streams {
     }
 
     pub trait ProgressBarStreamExt: Stream + Unpin + Sized {
-        fn pb(self) -> ProgressBarStream<Self> {
+        fn pb(self) -> ProgressBarIter<Self> {
             let mut bar = ProgressBar::smart();
             bar.process_size_hint(self.size_hint());
-            ProgressBarStream { bar, inner: self }
+            ProgressBarIter { bar, inner: self }
         }
 
-        fn with_pb(self, mut bar: ProgressBar) -> ProgressBarStream<Self> {
+        fn with_pb(self, mut bar: ProgressBar) -> ProgressBarIter<Self> {
             bar.process_size_hint(self.size_hint());
-            ProgressBarStream { bar, inner: self }
+            ProgressBarIter { bar, inner: self }
         }
     }
 
-    impl<S: Stream + Unpin + Sized> ProgressBarStreamExt for S {}
+    impl<Inner: Stream + Unpin + Sized> ProgressBarStreamExt for Inner {}
 }
 
 #[cfg(feature = "streams")]
