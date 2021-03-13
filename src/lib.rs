@@ -1,6 +1,6 @@
 use std::{
-    fmt::Write as _,
-    io::{stdout, Write as _},
+    fmt::{self, Write as _},
+    io::{self, stdout, Write as _},
     sync::atomic::{AtomicUsize, Ordering},
     sync::RwLock,
     time::{Duration, Instant},
@@ -73,11 +73,45 @@ impl<T> std::ops::DerefMut for CachePadded<T> {
 }
 
 // ========================================================================== //
+// [Error type]                                                               //
+// ========================================================================== //
+
+#[derive(Debug)]
+pub enum RenderError {
+    Io(io::Error),
+    Fmt(fmt::Error),
+}
+
+impl fmt::Display for RenderError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            RenderError::Fmt(e) => e.fmt(f),
+            RenderError::Io(e) => e.fmt(f),
+        }
+    }
+}
+
+// TODO: this should probably forward everything
+impl std::error::Error for RenderError {}
+
+impl From<io::Error> for RenderError {
+    fn from(e: io::Error) -> Self {
+        RenderError::Io(e)
+    }
+}
+
+impl From<fmt::Error> for RenderError {
+    fn from(e: fmt::Error) -> Self {
+        RenderError::Fmt(e)
+    }
+}
+
+// ========================================================================== //
 // [Customizable printing]                                                    //
 // ========================================================================== //
 
 pub trait ProgressBarTheme: Sync {
-    fn render(&self, pb: &ProgressBar);
+    fn render(&self, pb: &ProgressBar) -> Result<(), RenderError>;
 }
 
 #[derive(Debug, Default)]
@@ -109,20 +143,6 @@ fn human_time(duration: Duration) -> String {
     let m = total % 3600 / 60;
     let s = total % 60;
     format!("{:02}:{:02}:{:02}", h, m, s)
-}
-
-fn human_amount(x: f32) -> String {
-    let (n, unit) = if x > 1e9 {
-        (x / 1e9, "B")
-    } else if x > 1e6 {
-        (x / 1e6, "M")
-    } else if x > 1e3 {
-        (x / 1e3, "K")
-    } else {
-        (x, "")
-    };
-
-    format!("{:.02}{}", n, unit)
 }
 
 fn spinner(x: f32, width: u32) -> String {
@@ -188,7 +208,7 @@ end
 */
 
 impl ProgressBarTheme for DefaultProgressBarTheme {
-    fn render(&self, pb: &ProgressBar) {
+    fn render(&self, pb: &ProgressBar) -> Result<(), RenderError> {
         let mut o = stdout();
 
         // Draw left side.
@@ -197,11 +217,11 @@ impl ProgressBarTheme for DefaultProgressBarTheme {
 
             // If a description is set, print it.
             if let Some(desc) = pb.message() {
-                write!(buf, "{} ", desc).unwrap();
+                write!(buf, "{} ", desc)?;
             }
 
             if let Some(progress) = pb.progress() {
-                write!(buf, "{:>6.2}% ", progress * 100.0).unwrap();
+                write!(buf, "{:>6.2}% ", progress * 100.0)?;
             }
 
             buf
@@ -212,30 +232,25 @@ impl ProgressBarTheme for DefaultProgressBarTheme {
             let mut buf = String::new();
 
             // Print "done/total" part
-            write!(
-                buf,
-                " {}/{}",
-                human_amount(pb.value() as f32),
-                pb.target
-                    .map(|x| human_amount(x as f32))
-                    .unwrap_or_else(|| "?".to_owned())
-            )
-            .unwrap();
+            buf.write_char(' ')?;
+            pb.unit.write_total(&mut buf, pb.value())?;
+            buf.write_char('/')?;
+            match pb.target {
+                Some(target) => pb.unit.write_total(&mut buf, target)?,
+                None => buf.write_char('?')?,
+            }
 
             // Print ETA / time elapsed.
             if let Some(eta) = pb.eta() {
-                write!(buf, " [{}]", human_time(eta)).unwrap();
+                write!(buf, " [{}]", human_time(eta))?;
             } else {
-                write!(buf, " [{}]", human_time(pb.elapsed())).unwrap();
+                write!(buf, " [{}]", human_time(pb.elapsed()))?;
             }
 
             // Print iteration rate.
-            let iters_per_sec = pb.iters_per_sec();
-            if iters_per_sec >= 1.0 {
-                write!(buf, " ({} it/s)", human_amount(iters_per_sec)).unwrap();
-            } else {
-                write!(buf, " ({:.0} s/it)", 1.0 / iters_per_sec).unwrap();
-            }
+            buf.write_str(" (")?;
+            pb.unit.write_rate(&mut buf, pb.iters_per_sec())?;
+            buf.write_char(')')?;
 
             buf
         };
@@ -250,25 +265,96 @@ impl ProgressBarTheme for DefaultProgressBarTheme {
             .saturating_sub(left.len() as u32)
             .saturating_sub(right.len() as u32);
 
-        write!(o, "{}", left).unwrap();
+        write!(o, "{}", left)?;
 
         if bar_width > pb.cfg.min_bar_width {
             // Draw a progress bar for known-length bars.
             if let Some(progress) = pb.progress() {
-                write!(o, "{}", bar(progress, bar_width)).unwrap();
+                write!(o, "{}", bar(progress, bar_width))?;
             }
             // And a spinner for unknown-length bars.
             else {
                 let duration = Duration::from_secs(3);
                 let pos = pb.timer_progress(duration);
                 // Sub 1 from width because many terms render emojis with double width.
-                write!(o, "{}", spinner(pos, bar_width - 1)).unwrap();
+                write!(o, "{}", spinner(pos, bar_width - 1))?;
             }
         }
 
-        write!(o, "{}\r", right).unwrap();
+        write!(o, "{}\r", right)?;
 
-        o.flush().unwrap();
+        o.flush().map_err(Into::into)
+    }
+}
+
+// ========================================================================== //
+// [Units]                                                                    //
+// ========================================================================== //
+
+#[non_exhaustive]
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
+pub enum Unit {
+    Iterations,
+    Bytes,
+}
+
+fn human_iter_unit(x: usize) -> (&'static str, f32) {
+    if x > 10usize.pow(9) {
+        ("B", 1e9)
+    } else if x > 10usize.pow(6) {
+        ("M", 1e6)
+    } else if x > 10usize.pow(3) {
+        ("K", 1e3)
+    } else {
+        ("", 1e1)
+    }
+}
+
+fn bytes_unit(x: usize) -> (&'static str, f32) {
+    if x > 1024usize.pow(4) {
+        ("TiB", 1024_f32.powi(4))
+    } else if x > 1024usize.pow(3) {
+        ("GiB", 1024_f32.powi(3))
+    } else if x > 1024usize.pow(2) {
+        ("MiB", 1024_f32.powi(2))
+    } else if x > 1024usize.pow(1) {
+        ("KiB", 1024_f32.powi(1))
+    } else {
+        ("b", 1024_f32.powi(0))
+    }
+}
+
+impl Unit {
+    /// Formats an absolute amount, e.g. "1200 iterations".
+    fn write_total<W: fmt::Write>(self, mut out: W, amount: usize) -> fmt::Result {
+        match self {
+            Unit::Iterations => {
+                let (unit, div) = human_iter_unit(amount);
+                write!(out, "{:.2}{}", (amount as f32) / div, unit)
+            }
+            Unit::Bytes => {
+                let (unit, div) = bytes_unit(amount);
+                write!(out, "{:.2}{}", (amount as f32) / div, unit)
+            }
+        }
+    }
+
+    /// Formats a rate of change, e.g. "1200 it/sec".
+    fn write_rate<W: fmt::Write>(self, mut out: W, rate: f32) -> fmt::Result {
+        match self {
+            Unit::Iterations => {
+                if rate >= 1.0 {
+                    let (unit, div) = human_iter_unit(rate as usize);
+                    write!(out, "{:.2}{} it/s", rate / div, unit)
+                } else {
+                    write!(out, "{:.0} s/it", 1.0 / rate)
+                }
+            }
+            Unit::Bytes => {
+                let (unit, div) = bytes_unit(rate as usize);
+                write!(out, "{:.2}{}/s", rate / div, unit)
+            }
+        }
     }
 }
 
@@ -283,6 +369,8 @@ pub struct ProgressBar {
     target: Option<usize>,
     /// Whether the target was specified explicitly.
     explicit_target: bool,
+    /// Whether the target was specified explicitly.
+    pub(crate) unit: Unit,
     /// Creation time of the progress bar.
     start: Instant,
     /// Description of the progress bar, e.g. "Downloading image".
@@ -309,6 +397,7 @@ impl ProgressBar {
             target,
             explicit_target,
             start: Instant::now(),
+            unit: Unit::Iterations,
             value: CachePadded(0.into()),
             update_ctr: CachePadded(0.into()),
             next_print: CachePadded(1.into()),
@@ -341,6 +430,12 @@ impl ProgressBar {
     pub fn force_spinner(mut self) -> Self {
         self.explicit_target = true;
         self.target = None;
+        self
+    }
+
+    /// Set the unit to be used when formatting values.
+    pub fn unit(mut self, unit: Unit) -> Self {
+        self.unit = unit;
         self
     }
 }
@@ -467,7 +562,7 @@ impl ProgressBar {
 
     /// Forces a redraw of the progress-bar.
     pub fn redraw(&self) {
-        self.cfg.theme.render(self);
+        self.cfg.theme.render(self).unwrap();
         self.update_next_print();
     }
 }
