@@ -549,6 +549,12 @@ impl ProgressBar {
         self.value() as f32 / elapsed_sec
     }
 
+    /// Calculate the mean progress bar updates per second since creation of the progress bar.
+    pub fn updates_per_sec(&self) -> f32 {
+        let elapsed_sec = self.elapsed().as_secs_f32();
+        self.update_ctr() as f32 / elapsed_sec
+    }
+
     /// Calculates the progress of a rolling timer.
     ///
     /// Returned values are always between 0 and 1. Timers are calculated
@@ -582,7 +588,7 @@ impl ProgressBar {
             return;
         }
 
-        let freq = (self.iters_per_sec() / self.cfg.max_fps) as usize;
+        let freq = (self.updates_per_sec() / self.cfg.max_fps) as usize;
         let freq = freq.max(1);
 
         self.next_print.fetch_add(freq as usize, ATOMIC_ORD);
