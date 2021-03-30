@@ -540,7 +540,9 @@ impl ProgressBar {
     pub fn eta(&self) -> Option<Duration> {
         // wen eta?!
         let left = 1. / self.progress()?;
-        Some(self.elapsed().mul_f32(left))
+        let elapsed = self.elapsed();
+        let estimated_total = elapsed.mul_f32(left);
+        Some(estimated_total - elapsed)
     }
 
     /// Calculate the mean iterations per second since creation of the progress bar.
