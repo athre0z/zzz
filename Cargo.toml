@@ -4,11 +4,6 @@ version = "0.1.0"
 authors = ["Joel Höner <athre0z@zyantific.com>"]
 edition = "2018"
 
-[profile.release]
-debug = 1 # line tabs
-panic = "abort"
-lto = "fat"
-
 [features]
 default = ["streams"]
 streams = ["futures-core"]
