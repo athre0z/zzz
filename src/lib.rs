@@ -614,13 +614,13 @@ impl<Inner: Iterator> Iterator for ProgressBarIter<Inner> {
 }
 
 pub trait ProgressBarIterExt: Iterator + Sized {
-    fn pb(self) -> ProgressBarIter<Self> {
+    fn progress(self) -> ProgressBarIter<Self> {
         let mut bar = ProgressBar::smart();
         bar.process_size_hint(self.size_hint());
         ProgressBarIter { bar, inner: self }
     }
 
-    fn with_pb(self, mut bar: ProgressBar) -> ProgressBarIter<Self> {
+    fn with_progress(self, mut bar: ProgressBar) -> ProgressBarIter<Self> {
         bar.process_size_hint(self.size_hint());
         ProgressBarIter { bar, inner: self }
     }
@@ -663,13 +663,13 @@ pub mod streams {
     }
 
     pub trait ProgressBarStreamExt: Stream + Sized {
-        fn pb(self) -> ProgressBarIter<Self> {
+        fn progress(self) -> ProgressBarIter<Self> {
             let mut bar = ProgressBar::smart();
             bar.process_size_hint(self.size_hint());
             ProgressBarIter { bar, inner: self }
         }
 
-        fn with_pb(self, mut bar: ProgressBar) -> ProgressBarIter<Self> {
+        fn with_progress(self, mut bar: ProgressBar) -> ProgressBarIter<Self> {
             bar.process_size_hint(self.size_hint());
             ProgressBarIter { bar, inner: self }
         }
@@ -680,3 +680,22 @@ pub mod streams {
 
 #[cfg(feature = "streams")]
 pub use streams::*;
+
+// ============================================================================================== //
+// [Tests]                                                                                        //
+// ============================================================================================== //
+
+#[cfg(doctest)]
+mod tests {
+    macro_rules! external_doc_test {
+        ($x:expr) => {
+            #[doc = $x]
+            extern "C" {}
+        };
+    }
+
+    // Ensure the examples in README.md work.
+    external_doc_test!(include_str!("../README.md"));
+}
+
+// ============================================================================================== //

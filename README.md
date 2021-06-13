@@ -31,15 +31,29 @@ zzz = { version = "0.1" }
 - Very low overhead: doesn't slow down your loop, pretty much no matter how simple the loop body. On average a ...
     - `!Sync` progress bar update is 4 instructions (on average, 3 CPU cycles on Skylake)
     - ` Sync` progress bar update is also 4 instructions (on average, 38 CPU cycles on Skylake)
+  
+## Cargo Features
+- `streams`: Enables support for `.progress()` on async streams (`futures::streams::Stream`)
 
 ## Usage examples
 
-Looping over an iterator with a progress bar:
+Adding a progress bar to an iterator:
 ```rust
-fn main() {
-    //                            vvvvv
-    for _ in (0..1000).into_iter().pb() {
-        sleep(Duration::from_millis(10));
-    }
+use zzz::ProgressBarIterExt as _;
+
+//                             vvvvvvvv
+for _ in (0..1000).into_iter().progress() {
+    // ...
+}
+```
+
+Manually creating and advancing a progress bar:
+```rust
+use zzz::ProgressBar;
+
+let mut pb = ProgressBar::with_target(1234);
+for i in 0..1234 {
+    // ...
+    pb.add(1);
 }
 ```
