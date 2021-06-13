@@ -6,6 +6,8 @@
 [![MIT licensed][mit-badge]][mit-url]
 [![Apache 2.0 licensed][apache-badge]][apache-url]
 
+The progress bar with sane defaults that doesn't slow down your loops. Inspired by [tqdm].
+
 [crates-badge]: https://img.shields.io/crates/v/zzz.svg
 [crates-url]: https://crates.io/crates/zzz
 [docs-badge]: https://docs.rs/zzz/badge.svg
@@ -14,8 +16,7 @@
 [mit-url]: LICENSE-MIT
 [apache-badge]: https://img.shields.io/badge/license-Apache%202.0-blue.svg
 [apache-url]: LICENSE-APACHE
-
-The progress bar with sane defaults that doesn't slow down your loops.
+[tqdm]: https://github.com/tqdm/tqdm.git
 
 ```toml
 [dependencies]
