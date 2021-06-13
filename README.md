@@ -17,6 +17,9 @@ The progress bar with sane defaults that doesn't slow down your loops. Inspired 
 [apache-badge]: https://img.shields.io/badge/license-Apache%202.0-blue.svg
 [apache-url]: LICENSE-APACHE
 [tqdm]: https://github.com/tqdm/tqdm.git
+[screenshot]: https://i.imgur.com/9oMncYv.png
+
+![Screenshot][screenshot]
 
 ```toml
 [dependencies]
