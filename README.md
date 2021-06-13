@@ -15,24 +15,22 @@
 [apache-badge]: https://img.shields.io/badge/license-Apache%202.0-blue.svg
 [apache-url]: LICENSE-APACHE
 
-Yet another progress bar library.
+The progress bar with sane defaults that doesn't slow down your loops.
 
 ```toml
 [dependencies]
-zzz = { version = "*" }
+zzz = { version = "0.1" }
 ```
 
-## Core values
+## Features
 
-- Convenient application to iterators and streams
-- Doesn't slow down your loop, pretty much no matter how simple the subject
-  of the progress bar is, on average a ...
-    - `!Sync` progress bar update is 4 instructions (3 CPU cycles on Skylake)
-    - ` Sync` progress bar update is also 4 instructions (38 CPU cycles on Skylake[^1])
+- Practical defaults
+- Seamless integration with iterators and streams
+  - If possible, `zzz` infers the target size from `size_hint()`
 - Automagically determines and updates a good printing frequency
-- Looks pretty decent out of the box
-
-[^1]: For multi-threaded loops, cycle counts may vary 
+- Very low overhead: doesn't slow down your loop, pretty much no matter how simple the loop body. On average a ...
+    - `!Sync` progress bar update is 4 instructions (on average, 3 CPU cycles on Skylake)
+    - ` Sync` progress bar update is also 4 instructions (on average, 38 CPU cycles on Skylake)
 
 ## Usage examples
 

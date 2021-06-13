@@ -1,35 +1,14 @@
 use std::{
     fmt::{self, Write as _},
     io::{self, stdout, Write as _},
-    sync::atomic::{AtomicUsize, Ordering},
+    sync::atomic::{AtomicUsize, Ordering::Relaxed},
     sync::RwLock,
     time::{Duration, Instant},
 };
 
-/// Requirements
-/// ------------
-/// - Seamless integration with iterators and streams
-/// - Unless explicitly set, try to infer size from iter/stream
-/// - Automatically throttle printing to a sane amount
-/// - The PB should render at a somewhat consistent freq
-/// - It must be expected that the iterator's yield speed varies greatly
-///   over the execution period. Often, the first few iterations will take
-///   quite a bit longer due to things such as file system cache warmup
-/// - The PB shouldn't be a bottleneck for even the most mundane and tight
-///   loops running at millions of iterations per second. Optimally, the
-///   amortized case should not involve more than a few adds and one branch.
-/// - Try to implement the throttling without doing a syscall or RDTSC
-/// - It must be expected that, for non-iterator PBs, the value is bumped
-///   by more than one, so using modulo on the value for determining when to
-///   print is not an option
-///   - Also, modulo with a dynamic RHS is a pretty heavy operation
-/// - `!#[no_std]` would be nice to have
-
-const ATOMIC_ORD: Ordering = Ordering::Relaxed;
-
-// ========================================================================== //
-// [General configuration]                                                    //
-// ========================================================================== //
+// ============================================================================================== //
+// [General configuration]                                                                        //
+// ============================================================================================== //
 
 pub struct ProgressBarConfig {
     width: Option<u32>,
@@ -46,9 +25,9 @@ static DEFAULT_CFG: ProgressBarConfig = ProgressBarConfig {
     max_fps: 60.0,
 };
 
-// ========================================================================== //
-// [Utils]                                                                    //
-// ========================================================================== //
+// ============================================================================================== //
+// [Utils]                                                                                        //
+// ============================================================================================== //
 
 /// Pads and aligns a value to the length of a cache line.
 ///
@@ -72,9 +51,9 @@ impl<T> std::ops::DerefMut for CachePadded<T> {
     }
 }
 
-// ========================================================================== //
-// [Error type]                                                               //
-// ========================================================================== //
+// ============================================================================================== //
+// [Error type]                                                                                   //
+// ============================================================================================== //
 
 #[derive(Debug)]
 pub enum RenderError {
@@ -106,9 +85,9 @@ impl From<fmt::Error> for RenderError {
     }
 }
 
-// ========================================================================== //
-// [Customizable printing]                                                    //
-// ========================================================================== //
+// ============================================================================================== //
+// [Customizable printing]                                                                        //
+// ============================================================================================== //
 
 pub trait ProgressBarTheme: Sync {
     fn render(&self, pb: &ProgressBar) -> Result<(), RenderError>;
@@ -258,7 +237,7 @@ impl ProgressBarTheme for DefaultProgressBarTheme {
         let max_width = pb
             .cfg
             .width
-            .or_else(|| term_size::dimensions().map(|x| x.0 as u32))
+            .or_else(|| term_size::dimensions_stdout().map(|x| x.0 as u32))
             .unwrap_or(80);
 
         let bar_width = max_width
@@ -287,9 +266,9 @@ impl ProgressBarTheme for DefaultProgressBarTheme {
     }
 }
 
-// ========================================================================== //
-// [Units]                                                                    //
-// ========================================================================== //
+// ============================================================================================== //
+// [Units]                                                                                        //
+// ============================================================================================== //
 
 #[non_exhaustive]
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
@@ -358,9 +337,9 @@ impl Unit {
     }
 }
 
-// ========================================================================== //
-// [Main progress bar struct]                                                 //
-// ========================================================================== //
+// ============================================================================================== //
+// [Main progress bar struct]                                                                     //
+// ============================================================================================== //
 
 pub struct ProgressBar {
     /// Configuration to use.
@@ -471,8 +450,8 @@ impl ProgressBar {
     /// Synchronized version fo `set`.
     #[inline]
     pub fn set_sync(&self, n: usize) {
-        self.update_ctr.fetch_add(1, ATOMIC_ORD);
-        self.value.store(n, ATOMIC_ORD);
+        self.update_ctr.fetch_add(1, Relaxed);
+        self.value.store(n, Relaxed);
     }
 
     /// Add `n` to the value of the progress bar.
@@ -490,8 +469,8 @@ impl ProgressBar {
     /// Synchronized version fo `add`.
     #[inline]
     pub fn add_sync(&self, n: usize) -> usize {
-        self.value.fetch_add(n, ATOMIC_ORD);
-        let prev = self.update_ctr.fetch_add(1, ATOMIC_ORD);
+        self.value.fetch_add(n, Relaxed);
+        let prev = self.update_ctr.fetch_add(1, Relaxed);
         self.maybe_redraw(prev);
         prev
     }
@@ -499,13 +478,13 @@ impl ProgressBar {
     /// How often has the value been changed since creation?
     #[inline]
     pub fn update_ctr(&self) -> usize {
-        self.update_ctr.load(ATOMIC_ORD)
+        self.update_ctr.load(Relaxed)
     }
 
     /// Get the current value of the progress bar.
     #[inline]
     pub fn value(&self) -> usize {
-        self.value.load(ATOMIC_ORD)
+        self.value.load(Relaxed)
     }
 
     /// Get the current task description text.
@@ -579,21 +558,21 @@ impl ProgressBar {
 impl ProgressBar {
     #[inline]
     fn next_print(&self) -> usize {
-        self.next_print.load(ATOMIC_ORD)
+        self.next_print.load(Relaxed)
     }
 
     /// Calculate next print
     fn update_next_print(&self) {
         // Give the loop some time to warm up.
         if self.update_ctr() < 10 {
-            self.next_print.fetch_add(1, ATOMIC_ORD);
+            self.next_print.fetch_add(1, Relaxed);
             return;
         }
 
         let freq = (self.updates_per_sec() / self.cfg.max_fps) as usize;
         let freq = freq.max(1);
 
-        self.next_print.fetch_add(freq as usize, ATOMIC_ORD);
+        self.next_print.fetch_add(freq as usize, Relaxed);
     }
 
     #[inline]
@@ -609,9 +588,9 @@ impl ProgressBar {
     }
 }
 
-// ========================================================================== //
-// [Iterator integration]                                                     //
-// ========================================================================== //
+// ============================================================================================== //
+// [Iterator integration]                                                                         //
+// ============================================================================================== //
 
 pub struct ProgressBarIter<Inner> {
     bar: ProgressBar,
@@ -649,9 +628,9 @@ pub trait ProgressBarIterExt: Iterator + Sized {
 
 impl<Inner: Iterator + Sized> ProgressBarIterExt for Inner {}
 
-// ========================================================================== //
-// [Stream integration]                                                       //
-// ========================================================================== //
+// ============================================================================================== //
+// [Stream integration]                                                                           //
+// ============================================================================================== //
 
 #[cfg(feature = "streams")]
 pub mod streams {
