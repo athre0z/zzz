@@ -3,6 +3,11 @@ name = "zzz"
 version = "0.1.0"
 authors = ["Joel Höner <athre0z@zyantific.com>"]
 edition = "2018"
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+description = "Fast progress bar with sane defaults"
+repository = "https://github.com/athre0z/zzz"
+keywords = ["progress-bar", "tqdm", "iterator", "stream"]
 
 [features]
 default = []
