@@ -28,36 +28,47 @@ zzz = { version = "0.1" }
 
 ## Features
 
-- Practical defaults
 - Seamless integration with iterators and streams
   - If possible, `zzz` infers the target size from `size_hint()`
 - Automagically determines and updates a good printing frequency
-- Very low overhead: doesn't slow down your loop, pretty much no matter how simple the loop body. On average a ...
-    - `!Sync` progress bar update is 4 instructions (on average, 3 CPU cycles on Skylake)
-    - ` Sync` progress bar update is also 4 instructions (on average, 38 CPU cycles on Skylake)
+- Very low overhead: doesn't slow down your loop, pretty much no matter how simple the loop body. On Skylake, the average overhead per iteration for a
+    - `!Sync`/`add` based progress bar is 3 CPU cycles
+    - `Sync`/`add_sync` based progress bar is ~40 CPU cycles (depends on how many threads are updating the shared state)
   
 ## Cargo Features
 - `streams`: Enables support for `.progress()` on async streams (`futures::streams::Stream`)
 
 ## Usage examples
 
-Adding a progress bar to an iterator:
+**Adding a progress bar to an iterator**
+
 ```rust
 use zzz::ProgressBarIterExt as _;
 
-//                             vvvvvvvv
 for _ in (0..1000).into_iter().progress() {
-    // ...
+    //                         ^^^^^^^^
 }
 ```
 
-Manually creating and advancing a progress bar:
+If `size_hint()` for the iterator defines an upper bound, it is automatically taken as the target. Otherwise, a progress indicator ("spinner") is displayed. 
+
+**Manually creating and advancing a progress bar**
 ```rust
 use zzz::ProgressBar;
 
 let mut pb = ProgressBar::with_target(1234);
-for i in 0..1234 {
-    // ...
+for _ in 0..1234 {
+    pb.add(1);
+}
+```
+
+**Manually creating a spinner** (for unknown target progress indicator)
+
+```rust
+use zzz::ProgressBar;
+
+let mut pb = ProgressBar::spinner();
+for _ in 0..5678 {
     pb.add(1);
 }
 ```
