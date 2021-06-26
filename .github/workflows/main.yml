@@ -1,0 +1,22 @@
+name: CI
+on: [push, pull_request]
+jobs:
+  build_and_test:
+    name: fastqueue
+    runs-on: "${{ matrix.image_name }}"
+    strategy:
+      matrix:
+        image_name: ["macOS-latest", "windows-latest", "ubuntu-20.04"]
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+      - uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --release --all-features
+      - uses: actions-rs/cargo@v1
+        name: Test
+        with:
+          command: test
