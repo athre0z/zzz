@@ -303,7 +303,7 @@ fn human_iter_unit(x: usize) -> (&'static str, f32) {
     } else if x > 10usize.pow(3) {
         ("K", 1e3)
     } else {
-        ("", 1e1)
+        ("", 1e0)
     }
 }
 
