@@ -21,6 +21,10 @@ pub mod prelude {
 // [General configuration]                                                                        //
 // ============================================================================================== //
 
+/// Configuration for a progress bar.
+///
+/// This is a separate struct from the actual progress bar in order to allow a configuration to
+/// be reused in different progress bar instances.
 pub struct ProgressBarConfig {
     width: Option<u32>,
     /// Minimum width to bother with drawing the bar for.
@@ -46,7 +50,7 @@ static DEFAULT_CFG: ProgressBarConfig = ProgressBarConfig {
 /// https://docs.rs/crossbeam/0.7.3/crossbeam/utils/struct.CachePadded.html
 #[cfg_attr(target_arch = "x86_64", repr(align(128)))]
 #[cfg_attr(not(target_arch = "x86_64"), repr(align(64)))]
-pub struct CachePadded<T>(T);
+struct CachePadded<T>(T);
 
 impl<T> std::ops::Deref for CachePadded<T> {
     type Target = T;
@@ -66,6 +70,7 @@ impl<T> std::ops::DerefMut for CachePadded<T> {
 // [Error type]                                                                                   //
 // ============================================================================================== //
 
+/// Errors that can ocurr while drawing the progress bar.
 #[derive(Debug)]
 pub enum RenderError {
     Io(io::Error),
@@ -100,6 +105,7 @@ impl From<fmt::Error> for RenderError {
 // [Customizable printing]                                                                        //
 // ============================================================================================== //
 
+/// Trait defining how the progress bar is rendered.
 pub trait ProgressBarTheme: Sync {
     fn render(&self, pb: &ProgressBar) -> Result<(), RenderError>;
 }
@@ -281,6 +287,7 @@ impl ProgressBarTheme for DefaultProgressBarTheme {
 // [Units]                                                                                        //
 // ============================================================================================== //
 
+/// Determines the unit used for printing iteration speed.
 #[non_exhaustive]
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum Unit {
@@ -352,6 +359,20 @@ impl Unit {
 // [Main progress bar struct]                                                                     //
 // ============================================================================================== //
 
+/// Progress bar to be rendered on the terminal.
+///
+/// # Example
+///
+/// ```rust
+/// # fn main() {
+/// use zzz::prelude::*;
+///
+/// let mut bar = ProgressBar::with_target(123);
+/// for _ in 0..123 {
+///     bar.add(1);
+/// }
+/// # }
+/// ```
 pub struct ProgressBar {
     /// Configuration to use.
     cfg: &'static ProgressBarConfig,
@@ -395,14 +416,17 @@ impl ProgressBar {
         }
     }
 
+    /// Creates a smart progress bar, attempting to infer the target from size hints.
     pub fn smart() -> Self {
         Self::new(None, false)
     }
 
+    /// Creates a spinner, a progress bar with indeterminate target value.
     pub fn spinner() -> Self {
         Self::new(None, true)
     }
 
+    /// Creates a progress bar with an explicit target value.
     pub fn with_target(target: usize) -> Self {
         Self::new(Some(target), true)
     }
@@ -603,6 +627,7 @@ impl ProgressBar {
 // [Iterator integration]                                                                         //
 // ============================================================================================== //
 
+/// Iterator / stream wrapper that automatically updates a progress bar during iteration.
 pub struct ProgressBarIter<Inner> {
     bar: ProgressBar,
     inner: Inner,
@@ -624,6 +649,20 @@ impl<Inner: Iterator> Iterator for ProgressBarIter<Inner> {
     }
 }
 
+/// Extension trait implemented for all iterators, adding methods for
+/// conveniently adding a progress bar to an existing iterator.
+///
+/// # Example
+///
+/// ```rust
+/// # fn main() {
+/// use zzz::prelude::*;
+///
+/// for _ in (0..123).progress() {
+///     // ...
+/// }
+/// # }
+/// ```
 pub trait ProgressBarIterExt: Iterator + Sized {
     fn progress(self) -> ProgressBarIter<Self> {
         let mut bar = ProgressBar::smart();
@@ -673,6 +712,8 @@ pub mod streams {
         }
     }
 
+    /// Extension trait implemented for all streams, adding methods for conveniently adding a
+    /// progress bar to an existing iterator.
     pub trait ProgressBarStreamExt: Stream + Sized {
         fn progress(self) -> ProgressBarIter<Self> {
             let mut bar = ProgressBar::smart();
