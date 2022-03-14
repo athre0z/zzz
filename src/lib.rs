@@ -7,6 +7,17 @@ use std::{
 };
 
 // ============================================================================================== //
+// [Prelude module]                                                                               //
+// ============================================================================================== //
+
+/// Mass-import for the main progress bar type as well as the convenience extension traits.
+pub mod prelude {
+    #[cfg(feature = "streams")]
+    pub use crate::ProgressBarStreamExt;
+    pub use crate::{ProgressBar, ProgressBarIterExt};
+}
+
+// ============================================================================================== //
 // [General configuration]                                                                        //
 // ============================================================================================== //
 
