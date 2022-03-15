@@ -205,6 +205,18 @@ function braille(a::Float64, b::Float64)
 end
 */
 
+/// Determines the dimensions of stdout.
+#[cfg(feature = "auto-width")]
+fn stdout_dimensions() -> (usize, usize) {
+    term_size::dimensions_stdout().unwrap_or((80, 30))
+}
+
+/// Determines the dimensions of stdout.
+#[cfg(not(feature = "auto-width"))]
+fn stdout_dimensions() -> (usize, usize) {
+    (80, 30)
+}
+
 impl ProgressBarTheme for DefaultProgressBarTheme {
     fn render(&self, pb: &ProgressBar) -> Result<(), RenderError> {
         let mut o = stdout();
@@ -256,8 +268,7 @@ impl ProgressBarTheme for DefaultProgressBarTheme {
         let max_width = pb
             .cfg
             .width
-            .or_else(|| term_size::dimensions_stdout().map(|x| x.0 as u32))
-            .unwrap_or(80);
+            .unwrap_or_else(|| stdout_dimensions().0 as u32);
 
         let bar_width = max_width
             .saturating_sub(left.len() as u32)

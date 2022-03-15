@@ -10,11 +10,12 @@ repository = "https://github.com/athre0z/zzz"
 keywords = ["progress-bar", "tqdm", "iterator", "stream"]
 
 [features]
-default = []
+default = ["auto-width"]
+auto-width = ["term_size"]
 streams = ["futures-core"]
 
 [dependencies]
-term_size = "0.3"
+term_size = { version = "0.3", optional = true }
 futures-core = { version = "0.3", optional = true }
 
 [dev-dependencies]
