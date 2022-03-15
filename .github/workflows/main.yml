@@ -7,6 +7,10 @@ jobs:
     strategy:
       matrix:
         image_name: ["macOS-latest", "windows-latest", "ubuntu-20.04"]
+        features: ["--all-features"]
+        include:
+          - image_name: "ubuntu-20.04"
+            features: "--no-default-features"
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
