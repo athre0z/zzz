@@ -1,3 +1,5 @@
+#![doc = include_str!("../README.md")]
+
 use std::{
     fmt::{self, Write as _},
     io::{self, stdout, Write as _},
@@ -364,14 +366,12 @@ impl Unit {
 /// # Example
 ///
 /// ```rust
-/// # fn main() {
 /// use zzz::prelude::*;
 ///
 /// let mut bar = ProgressBar::with_target(123);
 /// for _ in 0..123 {
 ///     bar.add(1);
 /// }
-/// # }
 /// ```
 pub struct ProgressBar {
     /// Configuration to use.
@@ -532,7 +532,7 @@ impl ProgressBar {
         *self.message.get_mut().unwrap() = text.map(Into::into);
     }
 
-    /// Synchronized version fo `set_message`.
+    /// Synchronized version for `set_message`.
     pub fn set_message_sync(&self, text: Option<impl Into<String>>) {
         let mut message_lock = self.message.write().unwrap();
         *message_lock = text.map(Into::into);
@@ -582,7 +582,7 @@ impl ProgressBar {
         (elapsed_sec % timer_sec) / timer_sec
     }
 
-    /// Forces a redraw of the progress-bar.
+    /// Forces a redraw of the progress bar.
     pub fn redraw(&self) {
         self.cfg.theme.render(self).unwrap();
         self.update_next_print();
