@@ -567,7 +567,7 @@ impl ProgressBar {
         let left = 1. / self.progress()?;
         let elapsed = self.elapsed();
         let estimated_total = elapsed.mul_f32(left);
-        Some(estimated_total - elapsed)
+        Some(estimated_total.saturating_sub(elapsed))
     }
 
     /// Calculate the mean iterations per second since creation of the progress bar.
