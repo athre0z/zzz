@@ -28,11 +28,11 @@ pub mod prelude {
 /// This is a separate struct from the actual progress bar in order to allow a configuration to
 /// be reused in different progress bar instances.
 pub struct ProgressBarConfig {
-    width: Option<u32>,
+    pub width: Option<u32>,
     /// Minimum width to bother with drawing the bar for.
-    min_bar_width: u32,
-    theme: &'static dyn ProgressBarTheme,
-    max_fps: f32,
+    pub min_bar_width: u32,
+    pub theme: &'static dyn ProgressBarTheme,
+    pub max_fps: f32,
 }
 
 static DEFAULT_CFG: ProgressBarConfig = ProgressBarConfig {
