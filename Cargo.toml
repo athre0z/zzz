@@ -11,11 +11,11 @@ keywords = ["progress-bar", "tqdm", "iterator", "stream"]
 
 [features]
 default = ["auto-width"]
-auto-width = ["term_size"]
+auto-width = ["terminal_size"]
 streams = ["futures-core"]
 
 [dependencies]
-term_size = { version = "0.3", optional = true }
+terminal_size = { version = "0.2", optional = true }
 futures-core = { version = "0.3", optional = true }
 
 [dev-dependencies]

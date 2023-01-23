@@ -206,14 +206,25 @@ end
 */
 
 /// Determines the dimensions of stderr.
-#[cfg(feature = "auto-width")]
-fn stderr_dimensions() -> (usize, usize) {
-    term_size::dimensions_stderr().unwrap_or((80, 30))
+#[cfg(all(feature = "auto-width", target_family = "unix"))]
+fn stderr_dimensions() -> (u16, u16) {
+    use std::os::fd::AsRawFd;
+    let fd = std::io::stderr().as_raw_fd();
+    let size = terminal_size::terminal_size_using_fd(fd);
+    size.map(|(w, h)| (w.0, h.0)).unwrap_or((80, 30))
+}
+
+/// Determines the dimensions of stderr.
+#[cfg(all(feature = "auto-width", not(target_family = "unix")))]
+fn stderr_dimensions() -> (u16, u16) {
+    terminal_size::terminal_size()
+        .map(|(w, h)| (w.0, h.0))
+        .unwrap_or((80, 30))
 }
 
 /// Determines the dimensions of stderr.
 #[cfg(not(feature = "auto-width"))]
-fn stderr_dimensions() -> (usize, usize) {
+fn stderr_dimensions() -> (u16, u16) {
     (80, 30)
 }
 
@@ -265,10 +276,7 @@ impl ProgressBarTheme for DefaultProgressBarTheme {
             buf
         };
 
-        let max_width = pb
-            .cfg
-            .width
-            .unwrap_or_else(|| stderr_dimensions().0 as u32);
+        let max_width = pb.cfg.width.unwrap_or_else(|| stderr_dimensions().0 as u32);
 
         let bar_width = max_width
             .saturating_sub(left.len() as u32)
