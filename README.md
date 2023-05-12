@@ -23,7 +23,7 @@ The progress bar with sane defaults that doesn't slow down your loops. Inspired 
 
 ```toml
 [dependencies]
-zzz = { version = "0.1" }
+zzz = "0.2"
 ```
 
 ## Features
