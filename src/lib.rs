@@ -408,7 +408,7 @@ pub struct ProgressBar {
 impl Drop for ProgressBar {
     fn drop(&mut self) {
         self.redraw();
-        println!();
+        eprintln!();
     }
 }
 
