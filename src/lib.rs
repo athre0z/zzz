@@ -208,7 +208,14 @@ end
 /// Determines the dimensions of stderr.
 #[cfg(feature = "auto-width")]
 fn stderr_dimensions() -> (usize, usize) {
-    term_size::dimensions_stderr().unwrap_or((80, 30))
+    // term_size doesn't support stderr on Windows, so just use stdout and 
+    // hope for the best. We should probably replace term_size anyway in the
+    // long run since it's unmaintained, but this works for the moment.
+    #[cfg(target_os = "windows")]
+    return term_size::dimensions_stdout().unwrap_or((80, 30));
+
+    #[cfg(not(target_os = "windows"))]
+    return term_size::dimensions_stderr().unwrap_or((80, 30));
 }
 
 /// Determines the dimensions of stderr.
