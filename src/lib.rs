@@ -25,8 +25,9 @@ pub mod prelude {
 
 /// Configuration for a progress bar.
 ///
-/// This is a separate struct from the actual progress bar in order to allow a configuration to
-/// be reused in different progress bar instances.
+/// This is a separate struct from the actual progress bar in order to allow a
+/// configuration to be reused in different progress bar instances.
+#[derive(Clone)]
 pub struct ProgressBarConfig {
     pub width: Option<u32>,
     /// Minimum width to bother with drawing the bar for.
@@ -35,12 +36,51 @@ pub struct ProgressBarConfig {
     pub max_fps: f32,
 }
 
-static DEFAULT_CFG: ProgressBarConfig = ProgressBarConfig {
-    width: None,
-    min_bar_width: 5,
-    theme: &DefaultProgressBarTheme,
-    max_fps: 60.0,
-};
+static DEFAULT_CFG: ProgressBarConfig = ProgressBarConfig::const_default();
+
+impl ProgressBarConfig {
+    /// `const` variant of [`ProgressBarConfig::default`].
+    pub const fn const_default() -> Self {
+        ProgressBarConfig {
+            width: None,
+            min_bar_width: 5,
+            theme: &DefaultProgressBarTheme,
+            max_fps: 60.0,
+        }
+    }
+}
+
+impl Default for ProgressBarConfig {
+    #[inline]
+    fn default() -> Self {
+        ProgressBarConfig::const_default()
+    }
+}
+
+/// Selects the currently active global configuration.
+///
+/// This stores a `*const ProgressBarConfig`. We use `AtomicUsize` instead of
+/// the seemingly more idiomatic `AtomicPtr` here because the latter requires a
+/// **mutable** pointer, which would in turn force us to take the config as
+/// mutable reference to not run into UB. There is no const variant of `AtomicPtr`.
+/// Using `AtomicUsize` seemed like the lesser evil here.
+static GLOBAL_CFG: AtomicUsize = AtomicUsize::new(0);
+
+/// Gets the currently active global configuration.
+pub fn global_config() -> &'static ProgressBarConfig {
+    match GLOBAL_CFG.load(Relaxed) {
+        0 => &DEFAULT_CFG,
+        ptr => unsafe { &*(ptr as *const ProgressBarConfig) }
+    }
+}
+
+/// Set a new global default configuration.
+///
+/// This configuration is used when no explicit per instance configuration
+/// is specified via [`ProgressBar::config`].
+pub fn set_global_config(new_cfg: &'static ProgressBarConfig) {
+    GLOBAL_CFG.store(new_cfg as *const _ as _, Relaxed);
+}
 
 // ============================================================================================== //
 // [Utils]                                                                                        //
@@ -227,6 +267,7 @@ fn stderr_dimensions() -> (usize, usize) {
 impl ProgressBarTheme for DefaultProgressBarTheme {
     fn render(&self, pb: &ProgressBar) -> Result<(), RenderError> {
         let mut o = stderr();
+        let cfg = pb.active_config();
 
         // Draw left side.
         let left = {
@@ -272,8 +313,7 @@ impl ProgressBarTheme for DefaultProgressBarTheme {
             buf
         };
 
-        let max_width = pb
-            .cfg
+        let max_width = cfg
             .width
             .unwrap_or_else(|| stderr_dimensions().0 as u32);
 
@@ -283,7 +323,7 @@ impl ProgressBarTheme for DefaultProgressBarTheme {
 
         write!(o, "{}", left)?;
 
-        if bar_width > pb.cfg.min_bar_width {
+        if bar_width > cfg.min_bar_width {
             // Draw a progress bar for known-length bars.
             if let Some(progress) = pb.progress() {
                 write!(o, "{}", bar(progress, bar_width))?;
@@ -393,7 +433,7 @@ impl Unit {
 /// ```
 pub struct ProgressBar {
     /// Configuration to use.
-    cfg: &'static ProgressBarConfig,
+    cfg: Option<&'static ProgressBarConfig>,
     /// The expected, possibly approximate target of the progress bar.
     target: Option<usize>,
     /// Whether the target was specified explicitly.
@@ -423,7 +463,7 @@ impl Drop for ProgressBar {
 impl ProgressBar {
     fn new(target: Option<usize>, explicit_target: bool) -> Self {
         Self {
-            cfg: &DEFAULT_CFG,
+            cfg: None,
             target,
             explicit_target,
             start: Instant::now(),
@@ -454,8 +494,10 @@ impl ProgressBar {
 /// Builder-style methods.
 impl ProgressBar {
     /// Replace the config of the progress bar.
+    ///
+    /// Takes precedence over a global config set via [`set_global_config`].
     pub fn config(mut self, cfg: &'static ProgressBarConfig) -> Self {
-        self.cfg = cfg;
+        self.cfg = Some(cfg);
         self
     }
 
@@ -475,6 +517,12 @@ impl ProgressBar {
 
 /// Value manipulation and access.
 impl ProgressBar {
+    /// Returns the currently active configuration.
+    #[inline]
+    pub fn active_config(&self) -> &'static ProgressBarConfig {
+        self.cfg.unwrap_or_else(global_config)
+    }
+
     #[rustfmt::skip]
     pub fn process_size_hint(&mut self, hint: (usize, Option<usize>)) {
         // If an explicit target is set, disregard size hints.
@@ -603,7 +651,7 @@ impl ProgressBar {
 
     /// Forces a redraw of the progress bar.
     pub fn redraw(&self) {
-        self.cfg.theme.render(self).unwrap();
+        self.active_config().theme.render(self).unwrap();
         self.update_next_print();
     }
 }
@@ -623,7 +671,7 @@ impl ProgressBar {
             return;
         }
 
-        let freq = (self.updates_per_sec() / self.cfg.max_fps) as usize;
+        let freq = (self.updates_per_sec() / self.active_config().max_fps) as usize;
         let freq = freq.max(1);
 
         self.next_print.fetch_add(freq as usize, Relaxed);
