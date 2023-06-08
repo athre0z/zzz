@@ -48,7 +48,7 @@ impl Config {
         Config {
             width: None,
             min_bar_width: 5,
-            theme: &DefaultProgressBarTheme,
+            theme: &DefaultTheme,
             max_fps: 60.0,
         }
     }
@@ -157,7 +157,7 @@ pub trait Theme: Sync {
 }
 
 #[derive(Debug, Default)]
-struct DefaultProgressBarTheme;
+struct DefaultTheme;
 
 /// Creates a unicode progress bar.
 fn bar(progress: f32, length: u32) -> String {
@@ -268,7 +268,7 @@ fn stderr_dimensions() -> (usize, usize) {
     (80, 30)
 }
 
-impl Theme for DefaultProgressBarTheme {
+impl Theme for DefaultTheme {
     fn render(&self, pb: &ProgressBar) -> Result<(), RenderError> {
         let mut o = stderr();
         let cfg = pb.active_config();
