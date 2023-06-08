@@ -36,7 +36,7 @@ pub struct Config {
     pub width: Option<u32>,
     /// Minimum width to bother with drawing the bar for.
     pub min_bar_width: u32,
-    pub theme: &'static dyn ProgressBarTheme,
+    pub theme: &'static dyn Theme,
     pub max_fps: f32,
 }
 
@@ -152,7 +152,7 @@ impl From<fmt::Error> for RenderError {
 // ============================================================================================== //
 
 /// Trait defining how the progress bar is rendered.
-pub trait ProgressBarTheme: Sync {
+pub trait Theme: Sync {
     fn render(&self, pb: &ProgressBar) -> Result<(), RenderError>;
 }
 
@@ -268,7 +268,7 @@ fn stderr_dimensions() -> (usize, usize) {
     (80, 30)
 }
 
-impl ProgressBarTheme for DefaultProgressBarTheme {
+impl Theme for DefaultProgressBarTheme {
     fn render(&self, pb: &ProgressBar) -> Result<(), RenderError> {
         let mut o = stderr();
         let cfg = pb.active_config();
