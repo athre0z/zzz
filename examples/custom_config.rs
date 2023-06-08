@@ -2,14 +2,14 @@ use std::thread::sleep;
 use std::time::Duration;
 use zzz::*;
 
-static MY_CONFIG: ProgressBarConfig = ProgressBarConfig {
+static MY_CONFIG: Config = Config {
     max_fps: 10.0,
-    ..ProgressBarConfig::const_default()
+    ..Config::const_default()
 };
 
-static MY_CONFIG_2: ProgressBarConfig = ProgressBarConfig {
+static MY_CONFIG_2: Config = Config {
     min_bar_width: 80,
-    ..ProgressBarConfig::const_default()
+    ..Config::const_default()
 };
 
 fn main() {

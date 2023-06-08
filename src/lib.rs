@@ -23,12 +23,16 @@ pub mod prelude {
 // [General configuration]                                                                        //
 // ============================================================================================== //
 
+#[doc(hidden)]
+#[deprecated(note = "renamed to just `Config`")]
+pub type ProgressBarConfig = Config;
+
 /// Configuration for a progress bar.
 ///
 /// This is a separate struct from the actual progress bar in order to allow a
 /// configuration to be reused in different progress bar instances.
 #[derive(Clone)]
-pub struct ProgressBarConfig {
+pub struct Config {
     pub width: Option<u32>,
     /// Minimum width to bother with drawing the bar for.
     pub min_bar_width: u32,
@@ -36,12 +40,12 @@ pub struct ProgressBarConfig {
     pub max_fps: f32,
 }
 
-static DEFAULT_CFG: ProgressBarConfig = ProgressBarConfig::const_default();
+static DEFAULT_CFG: Config = Config::const_default();
 
-impl ProgressBarConfig {
-    /// `const` variant of [`ProgressBarConfig::default`].
+impl Config {
+    /// `const` variant of [`Config::default`].
     pub const fn const_default() -> Self {
-        ProgressBarConfig {
+        Config {
             width: None,
             min_bar_width: 5,
             theme: &DefaultProgressBarTheme,
@@ -50,10 +54,10 @@ impl ProgressBarConfig {
     }
 }
 
-impl Default for ProgressBarConfig {
+impl Default for Config {
     #[inline]
     fn default() -> Self {
-        ProgressBarConfig::const_default()
+        Config::const_default()
     }
 }
 
@@ -67,10 +71,10 @@ impl Default for ProgressBarConfig {
 static GLOBAL_CFG: AtomicUsize = AtomicUsize::new(0);
 
 /// Gets the currently active global configuration.
-pub fn global_config() -> &'static ProgressBarConfig {
+pub fn global_config() -> &'static Config {
     match GLOBAL_CFG.load(Relaxed) {
         0 => &DEFAULT_CFG,
-        ptr => unsafe { &*(ptr as *const ProgressBarConfig) }
+        ptr => unsafe { &*(ptr as *const Config) }
     }
 }
 
@@ -78,7 +82,7 @@ pub fn global_config() -> &'static ProgressBarConfig {
 ///
 /// This configuration is used when no explicit per instance configuration
 /// is specified via [`ProgressBar::config`].
-pub fn set_global_config(new_cfg: &'static ProgressBarConfig) {
+pub fn set_global_config(new_cfg: &'static Config) {
     GLOBAL_CFG.store(new_cfg as *const _ as _, Relaxed);
 }
 
@@ -433,7 +437,7 @@ impl Unit {
 /// ```
 pub struct ProgressBar {
     /// Configuration to use.
-    cfg: Option<&'static ProgressBarConfig>,
+    cfg: Option<&'static Config>,
     /// The expected, possibly approximate target of the progress bar.
     target: Option<usize>,
     /// Whether the target was specified explicitly.
@@ -496,7 +500,7 @@ impl ProgressBar {
     /// Replace the config of the progress bar.
     ///
     /// Takes precedence over a global config set via [`set_global_config`].
-    pub fn config(mut self, cfg: &'static ProgressBarConfig) -> Self {
+    pub fn config(mut self, cfg: &'static Config) -> Self {
         self.cfg = Some(cfg);
         self
     }
@@ -519,7 +523,7 @@ impl ProgressBar {
 impl ProgressBar {
     /// Returns the currently active configuration.
     #[inline]
-    pub fn active_config(&self) -> &'static ProgressBarConfig {
+    pub fn active_config(&self) -> &'static Config {
         self.cfg.unwrap_or_else(global_config)
     }
 
