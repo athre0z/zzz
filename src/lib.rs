@@ -33,11 +33,18 @@ pub type ProgressBarConfig = Config;
 /// configuration to be reused in different progress bar instances.
 #[derive(Clone)]
 pub struct Config {
+    /// Width of the progress bar.
     pub width: Option<u32>,
     /// Minimum width to bother with drawing the bar for.
     pub min_bar_width: u32,
+    /// Theme to use when drawing.
     pub theme: &'static dyn Theme,
+    /// Maximum redraw rate rate (draws per second).
     pub max_fps: f32,
+    /// Called to determine whether the progress bar should be drawn or not.
+    ///
+    /// The default value always returns `true`.
+    pub should_draw: &'static (dyn Fn() -> bool + Sync),
 }
 
 static DEFAULT_CFG: Config = Config::const_default();
@@ -50,6 +57,7 @@ impl Config {
             min_bar_width: 5,
             theme: &DefaultTheme,
             max_fps: 60.0,
+            should_draw: &|| true,
         }
     }
 }
@@ -685,7 +693,9 @@ impl ProgressBar {
     fn maybe_redraw(&self, prev: usize) {
         #[cold]
         fn cold_redraw(this: &ProgressBar) {
-            this.redraw();
+            if (this.active_config().should_draw)() {
+                this.redraw();
+            }
         }
 
         if prev == self.next_print() {
