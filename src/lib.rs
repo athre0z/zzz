@@ -466,8 +466,10 @@ pub struct ProgressBar {
 
 impl Drop for ProgressBar {
     fn drop(&mut self) {
-        self.redraw();
-        eprintln!();
+        if (self.active_config().should_draw)() {
+            self.redraw();
+            eprintln!();
+        }
     }
 }
 
