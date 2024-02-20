@@ -2,7 +2,7 @@
 
 use std::{
     fmt::{self, Write as _},
-    io::{self, stderr, Write as _},
+    io::{self, stderr, Write as _, IsTerminal},
     sync::atomic::{AtomicUsize, Ordering::Relaxed},
     sync::RwLock,
     time::{Duration, Instant},
@@ -43,7 +43,7 @@ pub struct Config {
     pub max_fps: f32,
     /// Called to determine whether the progress bar should be drawn or not.
     ///
-    /// The default value always returns `true`.
+    /// The default value always returns `true` if stderr is a terminal.
     pub should_draw: &'static (dyn Fn() -> bool + Sync),
 }
 
@@ -57,7 +57,7 @@ impl Config {
             min_bar_width: 5,
             theme: &DefaultTheme,
             max_fps: 60.0,
-            should_draw: &|| true,
+            should_draw: &|| stderr().is_terminal(),
         }
     }
 }
