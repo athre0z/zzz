@@ -2,7 +2,7 @@
 
 use std::{
     fmt::{self, Write as _},
-    io::{self, stderr, Write as _, IsTerminal},
+    io::{self, stderr, IsTerminal, Write as _},
     sync::atomic::{AtomicUsize, Ordering::Relaxed},
     sync::RwLock,
     time::{Duration, Instant},
@@ -82,7 +82,7 @@ static GLOBAL_CFG: AtomicUsize = AtomicUsize::new(0);
 pub fn global_config() -> &'static Config {
     match GLOBAL_CFG.load(Relaxed) {
         0 => &DEFAULT_CFG,
-        ptr => unsafe { &*(ptr as *const Config) }
+        ptr => unsafe { &*(ptr as *const Config) },
     }
 }
 
@@ -260,7 +260,7 @@ end
 /// Determines the dimensions of stderr.
 #[cfg(feature = "auto-width")]
 fn stderr_dimensions() -> (usize, usize) {
-    // term_size doesn't support stderr on Windows, so just use stdout and 
+    // term_size doesn't support stderr on Windows, so just use stdout and
     // hope for the best. We should probably replace term_size anyway in the
     // long run since it's unmaintained, but this works for the moment.
     #[cfg(target_os = "windows")]
@@ -325,9 +325,7 @@ impl Theme for DefaultTheme {
             buf
         };
 
-        let max_width = cfg
-            .width
-            .unwrap_or_else(|| stderr_dimensions().0 as u32);
+        let max_width = cfg.width.unwrap_or_else(|| stderr_dimensions().0 as u32);
 
         let bar_width = max_width
             .saturating_sub(left.len() as u32)
@@ -623,6 +621,9 @@ impl ProgressBar {
     #[inline]
     pub fn progress(&self) -> Option<f32> {
         let target = self.target?;
+        if target == 0 {
+            return None;
+        }
         Some(self.value() as f32 / target as f32)
     }
 
@@ -633,8 +634,12 @@ impl ProgressBar {
 
     /// Estimate the duration until completion.
     pub fn eta(&self) -> Option<Duration> {
-        // wen eta?!
-        let left = 1. / self.progress()?;
+        let progress = self.progress()?;
+        if progress == 0.0 {
+            return None;
+        }
+
+        let left = 1. / progress;
         let elapsed = self.elapsed();
         let estimated_total = elapsed.mul_f32(left);
         Some(estimated_total.saturating_sub(elapsed))
@@ -820,8 +825,24 @@ pub use streams::*;
 // [Tests]                                                                                        //
 // ============================================================================================== //
 
-#[cfg(doctest)]
+#[cfg(test)]
 mod tests {
+    use super::*;
+
+    #[test]
+    fn zero_target() {
+        for v in [0, 1, 100] {
+            let mut pb = ProgressBar::smart();
+            pb.target = Some(0);
+            pb.value.0.store(v, Relaxed);
+            assert_eq!(pb.progress(), None);
+            assert_eq!(pb.eta(), None);
+        }
+    }
+}
+
+#[cfg(doctest)]
+mod doctests {
     macro_rules! external_doc_test {
         ($x:expr) => {
             #[doc = $x]
